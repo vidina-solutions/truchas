@@ -5,7 +5,7 @@
 
 &MESH
   mesh_file = 'mesh.g'
-  coordinate_scale_factor = 2.0
+  coord_scale_factor = 2.0
 /
 
 &FUNCTION

@@ -13,8 +13,8 @@ Maxwell's equations, using the configuration specified by the
 :ref:`FDME_SOLVER<FDME_SOLVER_Namelist>` namelist,
 to solve an auxiliary electromagnetics (EM) problem.
 The equations are solved on the tetrahedral mesh specified by the
-:ref:`EM_MESH<EM_MESH_Namelist>` namelist, which is generally different
-than the mesh used for heat transfer. EM boundary conditions are defined using
+:ref:`MESH<MESH_Namelist>` namelist that was marked for electromagnetic
+model use. EM boundary conditions are defined using
 :ref:`ELECTROMAGNETIC_BC<ELECTROMAGNETIC_BC_Namelist>` namelists.
 
 .. caution::

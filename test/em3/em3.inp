@@ -8,10 +8,11 @@ the ball are not conforming.
 
 &MESH
   mesh_file = 'em-oball-hex.gen'
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
 /
 
-&EM_MESH
+&MESH
+  mesh_type = 'electromagnetics'
   mesh_file = 'em-oball-tet.gen'
   coord_scale_factor = 0.01
 /

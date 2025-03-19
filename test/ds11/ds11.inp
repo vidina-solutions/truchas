@@ -2,17 +2,8 @@ DIFFUSION SOLVER TEST 11
 
 Spherically symmetric phase change problem in an annular wedge with internal
 HTC interface condition between the outer mold shell and the inner metal.
-Exercises the handling of gap cells in the mapping back and forth between
-MATL and the material mesh function used by the diffusion solver.
 
 &MESH
-  mesh_file = 'ds11-gaps.g'
-  gap_element_blocks = 10   ! gap elements were inserted by add gaps along sideset 10
-/
-
-An alternative that doesn't use gap elements.
-Should give the same results
-#&MESH
   mesh_file = 'ds11.g'
   interface_side_sets = 10
 /

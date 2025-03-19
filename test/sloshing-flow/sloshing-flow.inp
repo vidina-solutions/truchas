@@ -1,6 +1,6 @@
 &MESH
   mesh_file = 'disk+mold.g'
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
 /
 
 &OUTPUTS

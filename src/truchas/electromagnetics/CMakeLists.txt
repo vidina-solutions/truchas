@@ -31,7 +31,6 @@ target_sources(truchas PRIVATE
   fdme_solver_namelist.F90
   electromagnetic_bc_namelist.F90
   induction_source_field_namelist.F90
-  em_mesh_namelist.F90
 )
 
 if(USE_MUMPS)

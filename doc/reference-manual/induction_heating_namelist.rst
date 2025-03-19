@@ -10,9 +10,9 @@ Joule heat source for induction heating simulations. It is required whenever
 the PHYSICS namelist option :ref:`induction_heating<physics-ih>` is enabled.
 The computation solves an auxiliary electromagnetics (EM) problem that
 simulates the eddy currents induced by an external low-frequency magnetic
-field. The EM field equations are solved on the tetrahedral mesh specified
-by the :ref:`EM_MESH<EM_MESH_Namelist>` namelist, which is generally different
-than the mesh used for heat transfer. EM boundary conditions are defined using
+field. The EM field equations are solved on a tetrahedral mesh specified
+by the :ref:`MESH<MESH_Namelist>` namelist that was marked for electromagnetic
+model use. EM boundary conditions are defined using
 :ref:`ELECTROMAGNETIC_BC<ELECTROMAGNETIC_BC_Namelist>` namelists. A properly
 configured model will typically include a :ref:`magnetic induction
 source<em-bc-ih-field>` boundary condition with an external field defined by

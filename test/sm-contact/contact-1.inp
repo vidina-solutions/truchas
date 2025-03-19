@@ -1,6 +1,6 @@
 &MESH
   mesh_file = 'rot-gap-xyz.gen'
-  coordinate_scale_factor = 1e-3
+  coord_scale_factor = 1e-3
   interface_side_sets = 10, 11 !, 12
 /
 

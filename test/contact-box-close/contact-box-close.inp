@@ -9,7 +9,7 @@
 
 &MESH
   mesh_file = 'rotated-cube.exo'
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
   interface_side_sets = 10
 /
 

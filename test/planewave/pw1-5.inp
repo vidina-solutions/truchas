@@ -49,7 +49,8 @@ PLANE WAVE NORMALLY INCIDENT ON WALL
 
 ### EM HEATING #################################################################
 
-&EM_MESH ! 5mm resolution in z
+&MESH ! 5mm resolution in z
+  mesh_type = 'simplicial'
   x_axis%coarse_grid = -0.025, 0.025
   x_axis%intervals = 5
   y_axis%coarse_grid = -0.025, 0.025

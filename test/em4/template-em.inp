@@ -12,7 +12,7 @@
 
 &MESH
   mesh_file = 'mesh_flat.gen'
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
 /
 
 &OUTPUTS
@@ -59,7 +59,8 @@
 
 ### INDUCTION HEATING ##########################################################
 
-&EM_MESH
+&MESH
+  mesh_type = 'simplicial' ! or 'electromagnetics'
   mesh_file = 'mesh_flat.gen'
   coord_scale_factor = 0.01
 /

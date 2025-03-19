@@ -13,7 +13,6 @@ Reference Manual
    complex_vfunction_namelist
    DIFFUSION_Solver_Namelist/index
    ELECTROMAGNETIC_BC_Namelist/index
-   EM_MESH_Namelist/index
    ENCLOSURE_RADIATION_Namelist/index
    ENCLOSURE_SURFACE_Namelist/index
    EVAPORATION_Namelist/index

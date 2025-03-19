@@ -84,12 +84,12 @@ contains
     call read_enclosure_radiation_namelists(lun)
 
     !! The mesh must be named 'main'
-    call enable_mesh ('main', exists)
+    call enable_mesh ('MAIN', exists)
     INSIST(exists)
 
     !! Read and initialize the mesh.
     call init_mesh_manager ()
-    mesh => unstr_mesh_ptr('main')
+    mesh => unstr_mesh_ptr('MAIN')
     INSIST(associated(mesh))
 
   end subroutine init_state

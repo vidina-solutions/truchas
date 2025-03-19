@@ -26,9 +26,6 @@
 !!    'mesh-file' -- path to an ExodusII mesh file (required)
 !!    'coord-scale-factor' -- a multiplicative scaling factor applied to the
 !!        node coordinates (optional)
-!!    'gap-element-block-ids' -- a list of Exodus element block IDs whose
-!!        elements should be converted into interface links. The elements in the
-!!        specified element blocks must satisfy certain constraints. (optional)
 !!    'interface-side-set-ids' -- a list of Exodus side set IDs defining an
 !!        internal mesh interface along which the mesh is sliced open and
 !!        stitched together with interface links. (optional)
@@ -107,7 +104,7 @@ contains
 
     use ext_exodus_mesh_type
     use exodus_mesh_io, only: read_exodus_mesh
-    use exodus_mesh_tools, only: convert_cells_to_links, create_internal_interfaces
+    use exodus_mesh_tools, only: create_internal_interfaces
     use string_utilities, only: i_to_c
     use parallel_communication
     use truchas_logging_services
@@ -151,20 +148,6 @@ contains
 
     !! Define an empty mesh link structure
     if (is_IOP) call mesh%set_no_links
-
-    !! Create internal interfaces from gap element blocks.
-    if (is_IOP) then
-      if (params%is_parameter('gap-element-block-ids')) then
-        call TLS_info('  processing gap element blocks', TLS_VERB_NOISY)
-        call params%get('gap-element-block-ids', ebid)
-        call convert_cells_to_links(mesh, ebid, stat, errmsg)
-        if (stat /= 0) errmsg = 'error processing gap element blocks: ' // errmsg
-      else
-        stat = 0
-      end if
-    end if
-    call broadcast_status(stat, errmsg)
-    if (stat /= 0) return
 
     !! Create internal interfaces from side sets.
     if (is_IOP) then

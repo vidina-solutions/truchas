@@ -1,6 +1,6 @@
 
 &MESH
-  coordinate_scale_factor = 0.001
+  coord_scale_factor = 0.001
   x_axis%coarse_grid = 0.0 100.0
   x_axis%intervals = 40
   y_axis%coarse_grid = 0.0 100.0
