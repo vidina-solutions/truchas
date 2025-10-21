@@ -40,6 +40,7 @@ module idaesol_type
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use state_history_type
   use nka_type
+  use safestep_type
   implicit none
   private
 
@@ -57,6 +58,8 @@ module idaesol_type
     real(r8) :: ntol = 0.1_r8       ! nonlinear solver error tolerance (relative to 1)
     type(nka), allocatable :: nka   ! nonlinear Krylov accelerator
     type(state_history) :: uhist    ! solution history structure
+    logical :: use_backward_euler
+    type(safestep) :: safe_dt
 
     !! Perfomance counters
     integer :: pcfun_calls = 0      ! number of calls to PCFUN
@@ -225,6 +228,11 @@ contains
       return
     end if
 
+    call params%get('use-backward-euler', this%use_backward_euler, stat, errmsg, default=.false.)
+    if (stat /= 0) then
+      errmsg = context//errmsg
+      return
+    end if
 
     !! Initialize the NKA structure.
     if (maxv > 0) then
@@ -237,6 +245,8 @@ contains
 
     !! We need to maintain 3 solution vectors for quadratic extrapolation.
     call this%uhist%init(3, this%n)
+
+    call this%safe_dt%init
 
   end subroutine init
 
@@ -442,7 +452,12 @@ contains
     INSIST(h > 0)
 
     !! Predicted solution and base point for BCE step.
-    if (this%uhist%depth() == 2) then ! trapezoid method
+    if (this%use_backward_euler) then
+      etah = h
+      t0 = tlast
+      call this%uhist%interp_state(t0, u0, order=1)
+      up = u0
+    else if (this%uhist%depth() == 2) then ! trapezoid method
       if (this%verbose) write(this%unit,fmt=1) this%seq+1, tlast, h
       etah = 0.5_r8 * h
       t0 = tlast + etah
@@ -490,6 +505,7 @@ contains
       if (errc == 0) exit BCE ! the BCE step was successful.
 
       if (fresh_pc) then ! preconditioner was fresh; cut h and return error condition.
+        call this%safe_dt%register_failed(etah, t)
         this%failed_bce = this%failed_bce + 1
         hnext = 0.5_r8 * h
         this%freeze_count = 1
@@ -505,7 +521,7 @@ contains
 
     predictor_error = (this%seq >= 3)
 
-    if (predictor_error) then
+    if (predictor_error .and. .not.this%use_backward_euler) then
 
       !! Predictor error control.
       u0 = u - up
@@ -535,6 +551,7 @@ contains
       if (this%verbose) write(this%unit,fmt=6)
       hnext = h
       errc = 0
+      if (this%use_backward_euler) hnext = min(RMAX*h, this%safe_dt%stepsize(t))
 
     end if
 

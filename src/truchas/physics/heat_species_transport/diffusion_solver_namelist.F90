@@ -37,6 +37,7 @@ contains
     !! Time stepping control parameters.
     integer :: pc_freq, max_step_tries
     logical :: verbose_stepping
+    logical :: use_backward_euler ! TODO: refactor the solver design
     integer :: integrator
     integer, parameter :: DS_ADAPTIVE_BDF2 = 1
     integer, parameter :: DS_NONADAPTIVE_BDF1 = 2
@@ -78,7 +79,7 @@ contains
         hypre_amg_coarsen_type, hypre_amg_interp_type, hypre_amg_strong_threshold, &
         hypre_amg_relax_down_type, hypre_amg_relax_up_type, &
         cond_vfrac_threshold, residual_atol, residual_rtol, &
-        use_new_mfd, void_temperature, cutvof
+        use_new_mfd, void_temperature, cutvof, use_backward_euler
 
     integer, parameter :: DS_SPEC_SYS = 1
     integer, parameter :: DS_TEMP_SYS = 2
@@ -127,6 +128,7 @@ contains
     residual_rtol = NULL_R
     use_new_mfd = .true.
     void_temperature = 0.0_r8
+    use_backward_euler = .false.
 
     if (is_IOP) read(lun,nml=diffusion_solver,iostat=ios,iomsg=iom)
     call broadcast(ios)
@@ -165,6 +167,7 @@ contains
     call broadcast(residual_rtol)
     call broadcast(use_new_mfd)
     call broadcast(void_temperature)
+    call broadcast(use_backward_euler)
 
     call params%set('void-temperature', void_temperature)
 
@@ -217,6 +220,7 @@ contains
       end if
       call params%set('pc-freq', pc_freq)
       call params%set('hmin', tiny(1.0_r8)) ! HMIN enforced by cycle driver
+      call params%set('use-backward-euler', use_backward_euler)
     case default
       if (nlk_tol /= NULL_R) then
         call TLS_info ('  ignoring NLK_TOL value; not relevant to STEPPING_METHOD choice.')
