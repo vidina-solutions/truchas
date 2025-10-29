@@ -195,7 +195,7 @@ contains
       call tls_info('MICROWAVE_HEAT_SOLVER: no power; EM heat set to zero')
 
     case (SCALE)
-      q = scf**2 * this%q
+      q = scf * this%q
       this%prev_q_scf = scf
       this%prev_q_is_zero = .false.
       if (this%q_from_restart) then
