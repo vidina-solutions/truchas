@@ -73,6 +73,7 @@ Components
 * :ref:`Residual_Atol<DIFF_SOL_RA>`
 * :ref:`Residual_Rtol<DIFF_SOL_RR>`
 * :ref:`Stepping_Method<DIFF_SOL_SM>`
+* :ref:`Use_Backward_Euler<DIFF_SOL_UBE>`
 * :ref:`Verbose_Stepping<DIFF_SOL_VS>`
 * :ref:`Void_Temperature<DIFF_SOL_VT>`
 
@@ -416,6 +417,15 @@ Stepping_Method
 | **Default**     : `Adaptive BDF2`
 | **Valid Values**: `Adaptive BDF2` or `Non-adaptive BDF1`
 | **Notes** : The non-adaptive integrator must be selected when fluid flow is enabled and void material is present. Otherwise use the default adaptive integrator.
+
+.. _DIFF_SOL_UBE:
+
+Use_Backward_Euler
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+| **Description** : Override the `Adaptive BDF2` stepping method to use backward Euler with the maximum available timestep.
+| **Type**        : logical
+| **Default**     : false
+| **Notes** : When this is selected, tolerances should be made much tighter, since they are no longer compared against a predictor error.
 
 .. _DIFF_SOL_VS:
 

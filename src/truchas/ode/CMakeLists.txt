@@ -6,4 +6,5 @@ target_sources(truchas PRIVATE
   bdf2/bdf2_profiling.F90
   bdf2/solution_history.F90
   idaesol_type.F90
+  safestep_type.F90
 )
