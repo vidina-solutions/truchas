@@ -3,8 +3,7 @@
 !!
 !! This module provides procedures that apply specific transformations to
 !! an Exodus mesh object.  Currently these involve the creation of internal
-!! mesh interfaces, either through the conversion of so-called gap element
-!! blocks or the slicing open of the mesh along specified side sets.
+!! mesh interfaces by slicing open the mesh along specified side sets.
 !!
 !! Neil N. Carlson <nnc@lanl.gov>
 !! Modified for general Exodus meshes, June 2015.

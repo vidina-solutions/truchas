@@ -334,7 +334,6 @@ contains
     case default
       INSIST(.false.)
     end select
-    array(:,this%mesh%ncell_onP+1:) = 0.0_r8  ! gap elements
   end subroutine ds_get_temp_grad
 
   !! Get reference to the current cell temperatures on the new distributed mesh.

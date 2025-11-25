@@ -427,7 +427,6 @@ contains
       character(*), intent(in) :: data_name, hdf_name, viz_name
       if (this(n)%model%has(data_name)) then
         call this(n)%model%get(data_name, scalar_out)
-        scalar_out(this(n)%mesh%ncell_onP+1:) = 0.0_r8 ! gap elements, if any
         call write_seq_cell_field(seq, scalar_out, hdf_name, for_viz=.true., viz_name=viz_name)
       end if
     end subroutine
@@ -436,7 +435,6 @@ contains
       character(*), intent(in) :: data_name, hdf_name, viz_name
       if (this(n)%model%has(data_name)) then
         call this(n)%model%get(data_name, vector_out)
-        vector_out(:,this(n)%mesh%ncell_onP+1:) = 0.0_r8 ! gap elements, if any
         call write_seq_cell_field(seq, vector_out, hdf_name, for_viz=.true., viz_name=viz_name)
       end if
     end subroutine

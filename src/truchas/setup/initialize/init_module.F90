@@ -354,7 +354,6 @@ CONTAINS
         call matl_get_cell_vof(j, vfrac)
         call func%compute_value(vfrac, [zone(j)%temp], zone(j)%rho)
       end do
-      zone(mesh%ncell_onP+1:)%rho = 0 ! gap elements
       zone%rho_old = zone%rho
 
       !! ZONE%ENTHALPY
@@ -364,7 +363,6 @@ CONTAINS
         call matl_get_cell_vof(j, vfrac)
         call func%compute_value(vfrac, [zone(j)%temp], zone(j)%enthalpy)
       end do
-      zone(mesh%ncell_onP+1:)%enthalpy = 0 ! gap elements
       zone%enthalpy_old = zone%enthalpy
 
     end if RESTARTCHECK
@@ -393,11 +391,9 @@ CONTAINS
     ASSERT(size(body_pid) == size(body_temp))
     ASSERT(size(body_pid) == size(body_vol,dim=1))
     ASSERT(size(tcell) == size(body_vol,dim=2))
-    ASSERT(size(tcell) >= mesh%ncell_onP)
+    ASSERT(size(tcell) == mesh%ncell_onP)
 
-    !! Default and dummy values
-    tcell(:mesh%ncell_onP) = 0   ! default void temperature for true cells
-    tcell(mesh%ncell_onP+1:) = 0 ! dummies for possible gap element cells
+    tcell = 0 ! default void temperature
 
     !! Array of non-void body indices
     nvbi = pack([(i,i=1,size(body_pid))], body_pid /= matl_model%void_index)
