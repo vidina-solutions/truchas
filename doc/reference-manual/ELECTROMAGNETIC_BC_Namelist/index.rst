@@ -12,9 +12,9 @@ namelist defines a particular condition to impose over a subset of the domain
 boundary. The boundary subset :math:`\Gamma` is specified using mesh face sets.
 The namelist variable `face_set_ids`_ takes a list of face set IDs, and the
 boundary condition is applied at all faces belonging to those face sets. Note
-that the mesh in view here is the one specified by the :ref:`EM_MESH
-<EM_Mesh_Namelist>` namelist. Also note that ExodusII mesh side sets are
-imported into Truchas as face sets with the same IDs.
+that the mesh in view here is the one specified by the :ref:`MESH
+<Mesh_Namelist>` namelist for use by the electromagnetic models. Also note that
+ExodusII mesh side sets are imported into Truchas as face sets with the same IDs.
 
 .. admonition:: Namelist Usage
 

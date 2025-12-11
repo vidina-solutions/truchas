@@ -51,12 +51,9 @@
 !!
 !! The above routines facilitate the 'complete' rearrangement of distributed
 !! data from one numbering to another, hence the mappings are permutations.
-!! A need has arisen to handle 'partial' rearrangements of data.  A case in
-!! point is rearranging cell-based data from the old Truchas mesh which may
-!! contain gap elements to the new DS mesh which has dropped these elements.
-!! In this case there is no complete 1-1 correspondence between the two
-!! numberings, but we can still perform the rearranngement of data where
-!! there is a correspondence.  The following routines provide this capability.
+!! If there is only a partial 1-1 correspondence between the two numberings
+!! it is possible to perform the rearrangement of data where there is a 1-1
+!! correspondence. The following routines provide this capability.
 !!
 !!  CALL CREATE_PAR_PERM (P1, P2, P12, LIST1 [, P21, LIST2])
 !!

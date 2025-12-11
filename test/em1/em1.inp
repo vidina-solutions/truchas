@@ -10,11 +10,12 @@ subdivision of the hex cells.
 
 &MESH
   mesh_file = 'em-qcyl-hex-void.gen'
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
 /
 
-&EM_MESH
+&MESH
   mesh_file = 'em-qcyl-tet.gen'
+  mesh_type = 'electromagnetics'
   coord_scale_factor = 0.01
 /
 

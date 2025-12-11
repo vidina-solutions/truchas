@@ -45,7 +45,8 @@ PLANE WAVE
 
 ### EM HEATING #################################################################
 
-&EM_MESH
+&MESH
+  mesh_type = 'simplicial'
   mesh_file = 'meshes/pw1-tet-03.gen'
 /
 

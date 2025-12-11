@@ -16,9 +16,9 @@ complex-valued phasor that satisfies the equation
 
    \nabla\times\mu^{-1}\nabla\times E-\omega^2\epsilon E-i\omega\sigma E = 0.
 
-The equation is solved on the tetrahedral mesh specified by the
-:ref:`EM_MESH<EM_MESH_Namelist>` namelist, which is generally different
-than the mesh used for heat transfer. Boundary conditions are defined using
+The equation is solved on a tetrahedral mesh specified by the
+:ref:`MESH<MESH_Namelist>` namelist that was marked for electromagnetic
+model use. Boundary conditions are defined using
 :ref:`ELECTROMAGNETIC_BC<ELECTROMAGNETIC_BC_Namelist>` namelists.
 
 This solver, which is not currently a standalone physics model, is used by

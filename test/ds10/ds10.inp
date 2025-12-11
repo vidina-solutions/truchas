@@ -3,9 +3,7 @@ DIFFUSION SOLVER TEST 10
 Test of internal HTC conditions.  2D heat conduction in [-0.5,0.5]^2
 with a piecewise linear steady state solution that should be recovered
 exactly (at t=infinity).  Internal interfaces along coordinate axes.
-The x < 0 and y > 0 part of the interface are set up as gap elements
-using the addgaps utility.  The remaining part is created here.  A
-different HTC coefficient is used on {x=0} than on {y=0}.  A unit
+A different HTC coefficient is used on {x=0} than on {y=0}.  A unit
 outward heat flux is imposed on the left and bottom boundaries and a
 unit inward heat flux is imposed on the top and right boundaries.
 Initial conditions are a uniform temperature of 3, and the average
@@ -18,9 +16,8 @@ four quadrants of the domain are
 
 
 &MESH
-  mesh_file = 'ds10-gaps.g'
-  gap_element_blocks  = 21 24   ! result of addgaps on side sets 11 and 14
-  interface_side_sets = 12 13
+  mesh_file = 'ds10.g'
+  interface_side_sets = 11 12 13 14
 /
 
 &OUTPUTS
@@ -77,7 +74,7 @@ y = 0 interface
 &THERMAL_BC
   name = 'y=0'
   type = 'interface-htc'
-  face_set_ids = 21, 12
+  face_set_ids = 11, 12
   htc = 5.0
 /
 
@@ -85,7 +82,7 @@ x = 0 interface
 &THERMAL_BC
   name = 'x=0'
   type = 'interface-htc'
-  face_set_ids = 13, 24
+  face_set_ids = 13, 14
   htc = 1.25
 /
 

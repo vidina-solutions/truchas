@@ -8,10 +8,11 @@ the ball are not conforming.
 
 &MESH
   mesh_file = 'meshes/em3-medium-hex.gen'
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
 /
 
-&EM_MESH
+&MESH
+  mesh_type = 'simplicial'
   mesh_file = 'meshes/em3-medium-tet.gen'
   coord_scale_factor = 0.01
 /

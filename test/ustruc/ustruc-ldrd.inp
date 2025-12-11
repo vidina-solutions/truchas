@@ -17,7 +17,7 @@ solidifying, solid, and undefined cell states from the microstructure model.
 
 &MESH
   mesh_file = 'wedge.exo'
-  coordinate_scale_factor = 0.001
+  coord_scale_factor = 0.001
   interface_side_sets = 5
 /
 

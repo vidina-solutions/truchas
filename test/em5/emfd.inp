@@ -10,10 +10,11 @@ subdivision of the hex cells.
 
 &MESH
   mesh_file = 'meshes/em-qcyl-hex.gen'
-  coordinate_scale_factor = 0.001
+  coord_scale_factor = 0.001
 /
 
-&EM_MESH
+&MESH
+  type = 'simplicial'
   mesh_file = 'meshes/em-qcyl-tet-large.gen'
   coord_scale_factor = 0.001
 /

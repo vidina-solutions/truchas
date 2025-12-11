@@ -6,6 +6,7 @@ target_sources(truchas PRIVATE
   facet_table_type.F90
   face_neighbor_table_type.F90
   mesh_manager.F90
+  mesh_namelist.F90
   parallel_permutations.F90
   cell_topology.F90
   cell_geometry.F90

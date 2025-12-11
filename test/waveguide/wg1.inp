@@ -55,7 +55,8 @@ ANDREY'S WAVEGUIDE TEST PROBLEM
 
 ### EM HEATING #################################################################
 
-&EM_MESH
+&MESH
+  mesh_type = 'simplicial'  ! or 'electromagnetics'
   x_axis%coarse_grid = -0.04318, 0.04318
   y_axis%coarse_grid = -0.02159, 0.02159
   z_axis%coarse_grid = -0.2, 0.2

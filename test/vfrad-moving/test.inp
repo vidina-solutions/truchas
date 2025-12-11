@@ -2,7 +2,7 @@
 
 &MESH
   mesh_file = "mesh.gen"
-  coordinate_scale_factor = 0.01
+  coord_scale_factor = 0.01
 /
 
 &PHYSICS

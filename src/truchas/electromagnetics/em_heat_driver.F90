@@ -92,7 +92,7 @@ contains
     end if
     plist => params%sublist('bc')
     call read_electromagnetic_bc_namelists(lun, plist)
-    call enable_mesh('em', exists)
+    call enable_mesh('EM', exists)
     if (.not.exists) call TLS_fatal('EM_MESH namelist was not specified')
   end subroutine
 
@@ -132,8 +132,8 @@ contains
 
     allocate(this)
 
-    this%ht_mesh => named_mesh_ptr('main')
-    this%em_mesh => simpl_mesh_ptr('em')
+    this%ht_mesh => named_mesh_ptr('MAIN')
+    this%em_mesh => simpl_mesh_ptr('EM')
 
     !! Generate the mapping between the HT and EM meshes
     call params%get('data-mapper-kind', data_mapper_kind, stat, errmsg, default='default')
