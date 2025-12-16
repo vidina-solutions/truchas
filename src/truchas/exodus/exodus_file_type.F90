@@ -66,17 +66,19 @@ module exodus_file_type
     integer(c_int) :: ID
     integer(c_int) :: num_elem
     integer(c_int) :: num_nodes_per_elem
-    character(:), allocatable :: elem_type
+    character(:), allocatable :: elem_type, name
   end type exo_elem_blk_info
 
   type :: exo_node_set_info
     integer(c_int) :: ID
     integer(c_int) :: num_node_in_set
+    character(:), allocatable :: name
   end type exo_node_set_info
 
   type :: exo_side_set_info
     integer(c_int) :: ID
     integer(c_int) :: num_side_in_set
+    character(:), allocatable :: name
   end type exo_side_set_info
 
   type, public :: exodus_file
@@ -130,15 +132,18 @@ contains
 
   subroutine exodus_file_open (this, path, stat, errmsg)
 
+    use string_utilities, only: i_to_c
+
     class(exodus_file), intent(out) :: this
     character(*), intent(in) :: path
     integer, intent(out), optional :: stat
     character(:), allocatable, optional :: errmsg
 
-    integer(c_int) :: comp_ws, io_ws, error, idummy
+    integer(c_int) :: comp_ws, io_ws, error, idummy, max_name_length
     real(c_float) :: version
     character(MAX_LINE_LENGTH,kind=c_char) :: title
     character(MAX_STR_LENGTH,kind=c_char) :: elem_type
+    character(:,kind=c_char), allocatable :: names(:)
     integer :: n
 
     if (present(stat)) stat = 0
@@ -153,6 +158,16 @@ contains
       return
     end if
     !TODO: should probably emit a warning if comp_ws /= io_ws
+
+    !! Set the returned length of names for element blocks, etc., to match
+    !! the length stored in the file rather than the default 32 characters.
+    max_name_length = ex_inquire_int(this%exoid, EX_INQ_DB_MAX_USED_NAME_LENGTH)
+    error = ex_set_option(this%exoid, EX_OPT_MAX_NAME_LENGTH, max_name_length)
+    if (error /= 0) then
+      call exo_error_handler('EXODUS_FILE:OPEN', &
+          'ex_set_option returned an error', error, stat, errmsg)
+      return
+    end if
 
     !! Get the mesh sizes.
     error = ex_get_init(this%exoid, title, this%num_dim, this%num_node, this%num_elem, &
@@ -172,8 +187,22 @@ contains
           'ex_get_elem_blk_ids returned an error', error, stat, errmsg)
       return
     end if
+
+    allocate(character(max_name_length) :: names(this%num_elem_blk))
+    error = ex_get_names(this%exoid, EX_ELEM_BLOCK, names)
+    if (error /= 0) then
+      call exo_error_handler('EXODUS_FILE:OPEN', &
+          'ex_get_names returned an error', error, stat, errmsg)
+      return
+    end if
     do n = 1, this%num_elem_blk
-       error = ex_get_elem_block (this%exoid, this%elem_blk(n)%ID, elem_type, &
+      !if (names(n) == '') names(n) = 'BLOCK_' // i_to_c(this%elem_blk(n)%ID)
+      this%elem_blk(n)%name = trim(names(n))
+    end do
+    deallocate(names)
+
+    do n = 1, this%num_elem_blk
+      error = ex_get_elem_block (this%exoid, this%elem_blk(n)%ID, elem_type, &
            this%elem_blk(n)%num_elem, this%elem_blk(n)%num_nodes_per_elem, idummy)
       if (error /= 0) then
         call exo_error_handler ('EXODUS_FILE:OPEN', &
@@ -192,8 +221,21 @@ contains
             'ex_get_node_set_ids returned an error', error, stat, errmsg)
         return
       end if
-      do n = 1, this%num_node_sets
 
+      allocate(character(max_name_length) :: names(this%num_node_sets))
+      error = ex_get_names(this%exoid, EX_NODE_SET, names)
+      if (error /= 0) then
+        call exo_error_handler('EXODUS_FILE:OPEN', &
+            'ex_get_names returned an error', error, stat, errmsg)
+        return
+      end if
+      do n = 1, this%num_node_sets
+        !if (names(n) == '') names(n) = 'NODE_SET_' // i_to_c(this%node_set(n)%ID)
+        this%node_set(n)%name = trim(names(n))
+      end do
+      deallocate(names)
+
+      do n = 1, this%num_node_sets
          error = ex_get_node_set_param(this%exoid, this%node_set(n)%ID, &
             this%node_set(n)%num_node_in_set, idummy)
         if (error /= 0) then
@@ -213,6 +255,20 @@ contains
             'ex_get_side_set_ids returned an error', error, stat, errmsg)
         return
       end if
+
+      allocate(character(max_name_length) :: names(this%num_side_sets))
+      error = ex_get_names(this%exoid, EX_SIDE_SET, names)
+      if (error /= 0) then
+        call exo_error_handler('EXODUS_FILE:OPEN', &
+            'ex_get_names returned an error', error, stat, errmsg)
+        return
+      end if
+      do n = 1, this%num_side_sets
+        !if (names(n) == '') names(n) = 'SIDE_SET_' // i_to_c(this%side_set(n)%ID)
+        this%side_set(n)%name = trim(names(n))
+      end do
+      deallocate(names)
+
       do n = 1, this%num_side_sets
          error = ex_get_side_set_param(this%exoid, this%side_set(n)%ID, &
             this%side_set(n)%num_side_in_set, idummy)

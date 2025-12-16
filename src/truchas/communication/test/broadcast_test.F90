@@ -31,6 +31,7 @@ program main
   call bcast_char_rank1
   call bcast_char_rank2
   call bcast_char_rank3
+  call bcast_alloc_char
 
   call MPI_Allreduce(status, global_status, 1, MPI_INTEGER, MPI_MAX, comm, ierr)
 
@@ -363,6 +364,66 @@ contains
     pass = (x == a)
     call write_result(pass, 'bcast_char_scalar')
   end subroutine
+
+  subroutine bcast_alloc_char
+    character(:), allocatable :: a
+    a = 'fubar'
+    ! bcast to unallocated char
+    block
+      character(:), allocatable :: x
+      if (is_IOP) x = a
+      call broadcast_alloc_char(x)
+      pass = (x == a)
+      call write_result(pass, 'broadcast_alloc_char_1')
+    end block
+    ! bcast to allocated char of different length
+    block
+      character(:), allocatable :: x
+      if (is_IOP) then
+        x = a
+      else
+        x = 'foo'
+      end if
+      call broadcast_alloc_char(x)
+      pass = (x == a)
+      call write_result(pass, 'broadcast_alloc_char_2')
+    end block
+    ! bcast to allocated char of same length
+    block
+      character(:), allocatable :: x
+      if (is_IOP) then
+        x = a
+      else
+        x = 'FUBAR'
+      end if
+      call broadcast_alloc_char(x)
+      pass = (x == a)
+      call write_result(pass, 'broadcast_alloc_char_3')
+    end block
+    ! bcast 0-length char to unallocated char
+    block
+      character(:), allocatable :: x
+      if (is_IOP) x = ''
+      call broadcast_alloc_char(x)
+      pass = (x == '')
+      call write_result(pass, 'broadcast_alloc_char_4')
+    end block
+    !bcast unallocated char to allocated char
+    block
+      character(:), allocatable :: x
+      if (.not.is_IOP) x = a
+      call broadcast_alloc_char(x)
+      pass = (.not.allocated(x))
+      call write_result(pass, 'broadcast_alloc_char_5')
+    end block
+    !bcast unallocated char to unallocated char
+    block
+      character(:), allocatable :: x
+      call broadcast_alloc_char(x)
+      pass = (.not.allocated(x))
+      call write_result(pass, 'broadcast_alloc_char_6')
+    end block
+  end subroutine bcast_alloc_char
 
   ! NB: I'm a bit surprised the following character array broadcasts work.
   ! Each element is an odd number of bytes, and I half expected padding to

@@ -111,6 +111,18 @@ for `int8`, `int32`, and `int64` integers; `real32` and `real64` reals;
 default logical; and default character. A character argument must have the
 same length on all processes.
 
+### Deferred-Length Character Broadcast
+
+```fortran
+character(:), allocatable :: s
+call broadcast_alloc_char(s)
+```
+This special purpose procedure differs from the generic broadcast of a scalar
+character variable in that the argument is a deferred-length allocatable
+character variable. The procedure effectively broadcasts the allocation status
+and length parameter of the scalar `s` in addition to the actual value (if any)
+of the variable on the IO process.
+
 ### Generic Scatter and Gather Subroutines
 These subroutines distribute data from the IO process to all processes
 and the reverse operation of collecting data from all processes onto the

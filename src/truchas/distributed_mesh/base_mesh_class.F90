@@ -30,14 +30,17 @@ module base_mesh_class
 
     !! Cell set data
     integer, allocatable :: cell_set_id(:)
+    type(vstring), allocatable :: cell_set_name(:)
     integer, allocatable :: cell_set_mask(:)
 
     !! Face set data
     integer, allocatable :: face_set_id(:)
+    type(vstring), allocatable :: face_set_name(:)
     type(bitfield), allocatable :: face_set_mask(:)
 
     !! Node set data
     integer, allocatable :: node_set_id(:)
+    type(vstring), allocatable :: node_set_name(:)
     integer, allocatable :: node_set_mask(:)
 
     real(r8), allocatable :: x(:,:)
@@ -62,6 +65,10 @@ module base_mesh_class
       class(base_mesh), intent(in) :: this
     end subroutine
   end interface
+
+  type :: vstring
+    character(:), allocatable :: s
+  end type
 
 contains
 
