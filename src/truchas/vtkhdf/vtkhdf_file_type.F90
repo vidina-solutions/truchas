@@ -6,7 +6,7 @@
 !! The format uses HDF5 for on-disk storage.
 !!
 !! Neil Carlson <neil.n.carlson@gmail.com>
-!! March 2024
+!! March 2024; refactored January 2026
 !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!
@@ -17,15 +17,14 @@
 !! NOTES
 !!
 !! The up-to-date specification for VTKHDF is at
-!! https://docs.vtk.org/en/latest/design_documents/VTKFileFormats.html#vtkhdf-file-format
-!! and is in development and evolving. The VTKHDF development road map is at
-!! https://discourse.vtk.org/t/vtkhdf-roadmap/13257
+!! https://docs.vtk.org/en/latest/vtk_file_formats/vtkhdf_file_format/index.html
 !!
-!! This module was written for version 2.1 of the format.
+!! This module was written for version 2.5 of the format.
 !!
-!! This module uses the "UnstructuredGrid" type of format, and supports static
-!! and time dependent datasets (node and cell based), but both assume a single
-!! static mesh.
+!! This module uses the "MultiBlockDataSet" type of format. It supports static
+!! and time dependent datasets (point and cell based), but both assume a single
+!! static mesh. The "Assembly" dataset hierarchy is limited to a flat collection
+!! of UnstructuredGrid blocks.
 !!
 !! This module is currently serial only: data must be collated onto a single
 !! process and written from that process using this object.
@@ -38,44 +37,42 @@ module vtkhdf_file_type
   use,intrinsic :: iso_fortran_env
   use hdf5_c_binding
   use hl_hdf5
+  use vtkhdf_ug_type
   implicit none
   private
 
   type, public :: vtkhdf_file
     private
-    integer(hid_t) :: file_id = -1
-    integer(hid_t) :: vtk_id=-1, cgrp_id=-1, pgrp_id=-1, steps_id=-1, cogrp_id=-1, pogrp_id=-1
-    integer :: nnode, ncell
-    logical :: temporal = .true.
-    integer :: nsteps = -1
-    type(temporal_dataset), pointer :: temporal_point_dsets => null()
-    type(temporal_dataset), pointer :: temporal_cell_dsets => null()
+    integer(hid_t) :: file_id = -1, vtk_id=-1, ass_id=-1
+    integer :: next_bid = 0
+    type(pdc_block), pointer :: blocks => null()
   contains
-    procedure :: create
-    procedure :: write_mesh
+    procedure :: create, create_block
+    procedure :: write_block_mesh
     procedure :: write_time_step
-    generic :: write_cell_dataset  => write_cell_dataset_real64
+    generic :: write_cell_dataset  => write_cell_dataset_real64, write_cell_dataset_int32
     generic :: write_point_dataset => write_point_dataset_real64
     generic :: register_temporal_cell_dataset  => register_temporal_cell_dataset_real64
     generic :: register_temporal_point_dataset => register_temporal_point_dataset_real64
     generic :: write_temporal_cell_dataset  => write_temporal_cell_dataset_real64
     generic :: write_temporal_point_dataset => write_temporal_point_dataset_real64
-    procedure, private :: write_cell_dataset_real64
+    procedure, private :: write_cell_dataset_real64, write_cell_dataset_int32
     procedure, private :: write_point_dataset_real64
     procedure, private :: register_temporal_cell_dataset_real64
     procedure, private :: register_temporal_point_dataset_real64
     procedure, private :: write_temporal_cell_dataset_real64
     procedure, private :: write_temporal_point_dataset_real64
     procedure :: close
+    procedure, private :: get_block_ptr
+    final :: vtkhdf_file_delete
   end type
 
-  type :: temporal_dataset
+  type :: pdc_block
     character(:), allocatable :: name
-    integer :: next_offset = 0
-    logical :: flag = .false.
-    type(temporal_dataset), pointer :: next => null()
+    type(vtkhdf_ug) :: b
+    type(pdc_block), pointer :: next => null()
   contains
-    final :: temporal_dataset_delete
+    final :: pdc_block_delete
   end type
 
   !! The VTK cell types that are relevant to Truchas.
@@ -85,21 +82,30 @@ module vtkhdf_file_type
   integer(int8), parameter, public :: VTK_WEDGE = 13
   integer(int8), parameter, public :: VTK_PYRAMID = 14
 
-  integer, parameter, public :: vtkhdf_version(*) = [2,1]
+  integer, parameter :: vtkhdf_version(*) = [2,5]
 
 contains
 
-  !! Create a new VTKHDF format file, overwriting any existing file. A file
-  !! supporting time-dependent data is created by default. Set the optional
-  !! TEMPORAL argument to false for a static file.
+  subroutine vtkhdf_file_delete(this)
+    type(vtkhdf_file), intent(inout) :: this
+    if (associated(this%blocks)) deallocate(this%blocks)
+  end subroutine
 
-  subroutine create(this, filename, stat, errmsg, temporal)
+  recursive subroutine pdc_block_delete(this)
+    type(pdc_block), intent(inout) :: this
+    call this%b%close
+    if (associated(this%next)) deallocate(this%next)
+  end subroutine
+
+  subroutine create(this, filename, stat, errmsg)
 
     class(vtkhdf_file), intent(out) :: this
     character(*), intent(in) :: filename
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-    logical, intent(in), optional :: temporal
+
+    integer(hid_t) :: crt_prop
+    integer(c_int) :: flag
 
     call init_hdf5
 
@@ -110,68 +116,91 @@ contains
       return
     end if
 
-    this%vtk_id = H5Gcreate(this%file_id, 'VTKHDF')
+    crt_prop = H5Pcreate(H5P_GROUP_CREATE)
+    flag = ior(H5P_CRT_ORDER_TRACKED, H5P_CRT_ORDER_INDEXED)
+    stat = H5Pset_link_creation_order(crt_prop, flag)
+    INSIST(stat == 0)
+
+    this%vtk_id = H5Gcreate(this%file_id, 'VTKHDF', gcpl_id=crt_prop)
     INSIST(this%vtk_id > 0)
 
     call h5_write_attr(this%vtk_id, 'Version', vtkhdf_version, stat, errmsg)
     INSIST(stat == 0)
-    call h5_write_attr(this%vtk_id, 'Type', 'UnstructuredGrid', stat, errmsg)
+    !NB: We stick with the older MB type due to an issue with the modern PDC
+    !type; see https://gitlab.kitware.com/vtk/vtk/-/issues/19902
+    !call h5_write_attr(this%vtk_id, 'Type', 'PartitionedDataSetCollection', stat, errmsg)
+    call h5_write_attr(this%vtk_id, 'Type', 'MultiBlockDataSet', stat, errmsg)
     INSIST(stat == 0)
 
-    this%cgrp_id = H5Gcreate(this%file_id, 'VTKHDF/CellData')
-    INSIST(this%cgrp_id > 0)
+    this%ass_id = H5Gcreate(this%vtk_id, 'Assembly', gcpl_id=crt_prop)
+    INSIST(this%ass_id > 0)
 
-    this%pgrp_id = H5Gcreate(this%file_id, 'VTKHDF/PointData')
-    INSIST(this%pgrp_id > 0)
+  end subroutine create
 
-    if (present(temporal)) this%temporal = temporal
-    if (this%temporal) then
+  subroutine create_block(this, name, stat, errmsg, temporal)
 
-      this%steps_id = H5Gcreate(this%file_id, 'VTKHDF/Steps')
-      INSIST(this%steps_id > 0)
+    class(vtkhdf_file), intent(inout) :: this
+    character(*), intent(in) :: name
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
+    logical, intent(in), optional :: temporal
 
-      this%cogrp_id = H5Gcreate(this%file_id, 'VTKHDF/Steps/CellDataOffsets')
-      INSIST(this%cogrp_id > 0)
+    integer :: n
+    type(pdc_block), pointer :: b, new
 
-      this%pogrp_id = H5Gcreate(this%file_id, 'VTKHDF/Steps/PointDataOffsets')
-      INSIST(this%pogrp_id > 0)
-
-      this%nsteps = 0
-      call h5_write_attr(this%steps_id, 'NSteps', this%nsteps, stat, errmsg)
-      INSIST(stat == 0)
-
-      associate (imold => [1], rmold => [1.0_real64], chunk_size => 100)
-        call h5_create_unlimited_dataset(this%steps_id, 'Values', rmold, chunk_size, stat, errmsg)
-        INSIST(stat == 0)
-        call h5_create_unlimited_dataset(this%steps_id, 'PointOffsets', imold, chunk_size, stat, errmsg)
-        INSIST(stat == 0)
-        call h5_create_unlimited_dataset(this%steps_id, 'CellOffsets', imold, chunk_size, stat, errmsg)
-        INSIST(stat == 0)
-        call h5_create_unlimited_dataset(this%steps_id, 'ConnectivityIdOffsets', imold, chunk_size, stat, errmsg)
-        INSIST(stat == 0)
-        call h5_create_unlimited_dataset(this%steps_id, 'NumberOfParts', imold, chunk_size, stat, errmsg)
-        INSIST(stat == 0)
-        call h5_create_unlimited_dataset(this%steps_id, 'PartOffsets', imold, chunk_size, stat, errmsg)
-        INSIST(stat == 0)
-      end associate
-
+    if (name == '') then
+      stat = -1
+      errmsg = 'invalid empty block name'
+      return
     end if
+
+    n = scan(name, './')
+    if (n /= 0) then
+      stat = -1
+      errmsg = 'invalid character "' // name(n:n) // '" in block name'
+      return
+    end if
+
+    if (name == 'Assembly') then
+      stat = -1
+      errmsg = 'invalid block name "Assembly"'
+      return
+    end if
+
+    !! Check that the named block has not already been defined.
+    b => this%blocks
+    do while (associated(b))
+      if (b%name == name) then
+        stat = -1
+        errmsg = 'block "' // name // '" already defined'
+        return
+      end if
+      b => b%next
+    end do
+
+    allocate(new)
+    new%name = name
+    new%next => this%blocks
+    this%blocks => new
+
+    call new%b%init(this%vtk_id, name, stat, errmsg, temporal)
+    if (stat /= 0) return
+    call h5_write_attr(new%b%root_id, 'Index', this%next_bid, stat, errmsg)
+    INSIST(stat == 0)
+    this%next_bid = this%next_bid + 1
+
+    !! Create an Assembly group softlink to the block.
+    stat = H5Lcreate_soft('/VTKHDF/'//name, this%ass_id, name)
+    INSIST(stat == 0)
 
   end subroutine
 
   subroutine close(this)
     class(vtkhdf_file), intent(inout) :: this
     integer :: istat
-    type(temporal_dataset), pointer :: dset
-    if (this%cogrp_id > 0) istat = H5Gclose(this%cogrp_id)
-    if (this%pogrp_id > 0) istat = H5Gclose(this%pogrp_id)
-    if (this%steps_id > 0) istat = H5Gclose(this%steps_id)
-    if (this%cgrp_id > 0) istat = H5Gclose(this%cgrp_id)
-    if (this%pgrp_id > 0) istat = H5Gclose(this%pgrp_id)
+    if (associated(this%blocks)) deallocate(this%blocks)
     if (this%vtk_id > 0) istat = H5Gclose(this%vtk_id)
     if (this%file_id > 0) istat = H5Fclose(this%file_id)
-    if (associated(this%temporal_cell_dsets)) deallocate(this%temporal_cell_dsets)
-    if (associated(this%temporal_point_dsets)) deallocate(this%temporal_point_dsets)
     call default_initialize(this)
   contains
     subroutine default_initialize(this)
@@ -179,303 +208,192 @@ contains
     end subroutine
   end subroutine
 
-  recursive subroutine temporal_dataset_delete(this)
-    type(temporal_dataset), intent(inout) :: this
-    if (associated(this%next)) deallocate(this%next)
-  end subroutine
+  !! Write the UnstructuredGrid data for the specified block. The unstructured
+  !! mesh is described in the conventional manner by the X, CNODE, and XCNODE
+  !! arrays. The additional array TYPES provides an unambiguous specification
+  !! of the cell types that one might otherwise infer from the XCNODE array.
+  !! This procedure must be called for each of the blocks before any of the
+  !! following procedures.
 
-  !! Write the unstructured mesh to the file. The mesh is described in the
-  !! conventional manner by the X, CNODE, and XCNODE arrays. The additional
-  !! array TYPES provides an unambiguous specification of the cell types,
-  !! that we would otherwise infer from the OFFSETS array. This procedure
-  !! must be called before any of the following procedures.
-
-  subroutine write_mesh(this, x, cnode, xcnode, types, stat, errmsg)
+  subroutine write_block_mesh(this, block_name, x, cnode, xcnode, types, stat, errmsg)
 
     class(vtkhdf_file), intent(inout) :: this
+    character(*), intent(in) :: block_name
     real(real64), intent(in) :: x(:,:)
     integer, intent(in) :: cnode(:), xcnode(:)
     integer(int8), intent(in) :: types(:)
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
-    INSIST(this%file_id > 0)
+    type(vtkhdf_ug), pointer :: bptr
 
-    this%nnode = size(x, dim=2)
-    this%ncell = size(types)
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%write_mesh(x, cnode, xcnode, types, stat, errmsg)
 
-    ASSERT(size(xcnode) == this%ncell+1)
-    ASSERT(size(cnode) == xcnode(size(xcnode))-1)
-    ASSERT(minval(cnode) >= 1)
-    ASSERT(maxval(cnode) <= this%nnode)
+  end subroutine write_block_mesh
 
-    call h5_write_dataset(this%vtk_id, 'NumberOfPoints', [this%nnode], stat, errmsg)
-    INSIST(stat == 0)
-    call h5_write_dataset(this%vtk_id, 'NumberOfCells',  [this%ncell], stat, errmsg)
-    INSIST(stat == 0)
-    call h5_write_dataset(this%vtk_id, 'NumberOfConnectivityIds', [size(cnode)], stat, errmsg)
-    INSIST(stat == 0)
+  !! Writes the cell-based data ARRAY to a new named cell dataset for the
+  !! specified mesh block. Scalar, vector, and tensor cell-based data are
+  !! supported. In the case of a temporal block supporting time-dependent
+  !! datasets, this dataset is static and not associated with any time step.
 
-    call h5_write_dataset(this%vtk_id, 'Connectivity', cnode-1, stat, errmsg)  ! 0-based indexing
-    INSIST(stat == 0)
-    call h5_write_dataset(this%vtk_id, 'Offsets', xcnode-1, stat, errmsg) ! offsets instead of starting indices
-    INSIST(stat == 0)
-    call h5_write_dataset(this%vtk_id, 'Types', types, stat, errmsg)
-    INSIST(stat == 0)
-    call h5_write_dataset(this%vtk_id, 'Points', x, stat, errmsg)
-    INSIST(stat == 0)
-
-  end subroutine
-
-  !! Writes the cell-based data ARRAY to a new named cell dataset. Scalar,
-  !! vector, and tensor cell-based data are supported. In the case of a
-  !! temporal file supporting time-dependent datasets, this dataset is
-  !! static and not associated with any time step.
-
-  subroutine write_cell_dataset_real64(this, name, array, stat, errmsg)
+  subroutine write_cell_dataset_real64(this, block_name, name, array, stat, errmsg)
     class(vtkhdf_file), intent(in) :: this
-    character(*), intent(in) :: name
+    character(*), intent(in) :: block_name, name
     real(real64), intent(in) :: array(..)
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-    integer, allocatable :: dims(:)
-    dims = shape(array)
-    INSIST(size(dims) >= 1 .and. size(dims) <= 3)
-    INSIST(dims(size(dims)) == this%ncell)
-    call h5_write_dataset(this%cgrp_id, name, array, stat, errmsg)
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%write_cell_dataset_real64(name, array, stat, errmsg)
   end subroutine
 
-  !! Writes the point-based data ARRAY to a new named point dataset. Scalar,
-  !! vector, and tensor point-based data are supported. In the case of a
-  !! temporal file supporting time-dependent datasets, this dataset is
-  !! static and not associated with any time step.
-
-  subroutine write_point_dataset_real64(this, name, array, stat, errmsg)
+  subroutine write_cell_dataset_int32(this, block_name, name, array, stat, errmsg)
     class(vtkhdf_file), intent(in) :: this
-    character(*), intent(in) :: name
+    character(*), intent(in) :: block_name, name
+    integer(int32), intent(in) :: array(..)
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%write_cell_dataset_int32(name, array, stat, errmsg)
+  end subroutine
+
+  !! Writes the point-based data ARRAY to a new named cell dataset for the
+  !! specified mesh block. Scalar, vector, and tensor cell-based data are
+  !! supported. In the case of a temporal block supporting time-dependent
+  !! datasets, this dataset is static and not associated with any time step.
+
+  subroutine write_point_dataset_real64(this, block_name, name, array, stat, errmsg)
+    class(vtkhdf_file), intent(in) :: this
+    character(*), intent(in) :: block_name, name
     real(real64), intent(in) :: array(..)
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-    integer, allocatable :: dims(:)
-    dims = shape(array)
-    INSIST(size(dims) >= 1 .and. size(dims) <= 3)
-    INSIST(dims(size(dims)) == this%nnode)
-    call h5_write_dataset(this%pgrp_id, name, array, stat, errmsg)
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%write_point_dataset_real64(name, array, stat, errmsg)
   end subroutine
 
-  !! Register the specified name as a time-dependent point dataset. This writes
-  !! no data, but only configures some necessary internal metadata. The MOLD
-  !  array argument shall have the same type, kind, and rank as the actual
-  !! dataset, and the same extent in all but the last dimension, but the array
-  !! values themselves are not accessed. Scalar, vector, and tensor-valued mesh
+  !! Register the specified NAME as a time-dependent point dataset for the
+  !! specified mesh block. This writes no data, but only configures some
+  !! necessary internal metadata. The MOLD array argument shall have the same
+  !! type, kind, and rank as the actual dataset, and the same extent in all
+  !! but the last dimension, whose extent is ignored, but the array values
+  !! themselves are not accessed. Scalar, vector, and tensor-valued mesh
   !! data are supported (rank-1, 2, and 3 MOLD).
 
-  subroutine register_temporal_point_dataset_real64(this, name, mold, stat, errmsg)
-
+  subroutine register_temporal_point_dataset_real64(this, block_name, name, mold, stat, errmsg)
     class(vtkhdf_file), intent(inout) :: this
-    character(*), intent(in) :: name
+    character(*), intent(in) :: block_name, name
     real(real64), intent(in) :: mold(..)
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-
-    type(temporal_dataset), pointer :: new
-
-    INSIST(this%nsteps == 0)
-
-    allocate(new)
-    new%name = name
-    associate (chunk_size => this%nnode)
-      call h5_create_unlimited_dataset(this%pgrp_id, name, mold, chunk_size, stat, errmsg)
-    end associate
-    new%next => this%temporal_point_dsets
-    this%temporal_point_dsets => new
-
-    associate (mold => [1], chunk_size => 100)
-      call h5_create_unlimited_dataset(this%pogrp_id, name, mold, chunk_size, stat, errmsg)
-    end associate
-
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%register_temporal_point_dataset_real64(name, mold, stat, errmsg)
   end subroutine
 
-  !! Register the specified name as a time-dependent cell dataset. This writes
-  !! no data, but only configures some necessary internal metadata. The MOLD
-  !  array argument shall have the same type, kind, and rank as the actual
-  !! dataset, and the same extent in all but the last dimension, but the array
-  !! values themselves are not accessed. Scalar, vector, and tensor-valued mesh
+  !! Register the specified NAME as a time-dependent cell dataset for the
+  !! specified mesh block. This writes no data, but only configures some
+  !! necessary internal metadata. The MOLD array argument shall have the same
+  !! type, kind, and rank as the actual dataset, and the same extent in all
+  !! but the last dimension, whose extent is ignored, but the array values
+  !! themselves are not accessed. Scalar, vector, and tensor-valued mesh
   !! data are supported (rank-1, 2, and 3 MOLD).
 
-  subroutine register_temporal_cell_dataset_real64(this, name, mold, stat, errmsg)
-
+  subroutine register_temporal_cell_dataset_real64(this, block_name, name, mold, stat, errmsg)
     class(vtkhdf_file), intent(inout) :: this
-    character(*), intent(in) :: name
+    character(*), intent(in) :: block_name, name
     real(real64), intent(in) :: mold(..)
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-
-    type(temporal_dataset), pointer :: new
-
-    INSIST(this%nsteps == 0)
-
-    allocate(new)
-    new%name = name
-    associate (chunk_size => this%ncell)
-      call h5_create_unlimited_dataset(this%cgrp_id, name, mold, chunk_size, stat, errmsg)
-    end associate
-    new%next => this%temporal_cell_dsets
-    this%temporal_cell_dsets => new
-
-    associate (mold => [1], chunk_size => 100)
-      call h5_create_unlimited_dataset(this%cogrp_id, name, mold, chunk_size, stat, errmsg)
-    end associate
-
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%register_temporal_cell_dataset_real64(name, mold, stat, errmsg)
   end subroutine
 
   !! Mark the start of a new time step with time value TIME. Subsequent output
   !! of time-dependent datasets will be associated with this time step.
 
   subroutine write_time_step(this, time)
-
     class(vtkhdf_file), intent(inout) :: this
     real(real64), intent(in) :: time
-
-    type(temporal_dataset), pointer :: tmp
-    integer :: stat
-    character(:), allocatable :: errmsg
-
-    INSIST(this%nsteps >= 0)
-
-    this%nsteps = this%nsteps + 1
-    call h5_write_attr(this%steps_id, 'NSteps', this%nsteps, stat, errmsg)
-    INSIST(stat == 0)
-
-    !! A single mesh is used for all time steps so there are no offsets
-    call h5_append_to_dataset(this%steps_id, 'Values', time, stat, errmsg)
-    INSIST(stat == 0)
-    call h5_append_to_dataset(this%steps_id, 'PointOffsets', 0, stat, errmsg)
-    INSIST(stat == 0)
-    call h5_append_to_dataset(this%steps_id, 'CellOffsets', 0, stat, errmsg)
-    INSIST(stat == 0)
-    call h5_append_to_dataset(this%steps_id, 'ConnectivityIdOffsets', 0, stat, errmsg)
-    INSIST(stat == 0)
-    call h5_append_to_dataset(this%steps_id, 'NumberOfParts', 1, stat, errmsg)
-    INSIST(stat == 0)
-    call h5_append_to_dataset(this%steps_id, 'PartOffsets', 0, stat, errmsg)
-    INSIST(stat == 0)
-
-    !! Set default offsets into point and cell datasets for each of the temporal
-    !! datasets. The default points to the dataset for the previous time step
-    !! (except initially). This will be overwritten when the dataset is written
-    !! to for this time step.
-
-    tmp => this%temporal_point_dsets
-    do while (associated(tmp))
-      tmp%flag = .false.  ! dataset not yet written for this time step
-      call h5_append_to_dataset(this%pogrp_id, tmp%name, tmp%next_offset, stat, errmsg)
-      INSIST(stat == 0)
-      tmp => tmp%next
+    type(pdc_block), pointer :: b
+    b => this%blocks
+    do while (associated(b))
+      if (b%b%nsteps >= 0) call b%b%write_time_step(time)
+      b => b%next
     end do
+  end subroutine
 
-    tmp => this%temporal_cell_dsets
-    do while (associated(tmp))
-      tmp%flag = .false.  ! dataset not yet written for this time step
-      call h5_append_to_dataset(this%cogrp_id, tmp%name, tmp%next_offset, stat, errmsg)
-      INSIST(stat == 0)
-      tmp => tmp%next
-    end do
+  !! Write the point-based data ARRAY to the named time-dependent cell dataset
+  !! for the specified mesh block. The data is associated with the current
+  !! time step.
 
-  end subroutine write_time_step
-
-  !! Write the cell-based data ARRAY for the named time-dependent cell dataset.
-  !! The data is associated with the current time step.
-
-  subroutine write_temporal_cell_dataset_real64(this, name, array, stat, errmsg)
-
+  subroutine write_temporal_point_dataset_real64(this, block_name, name, array, stat, errmsg)
     class(vtkhdf_file), intent(in) :: this
-    character(*), intent(in) :: name
+    character(*), intent(in) :: block_name, name
     real(real64), intent(in) :: array(..)
     integer, intent(out) :: stat
     character(:), allocatable :: errmsg
-
-    integer, allocatable :: dims(:)
-    type(temporal_dataset), pointer :: dset
-
-    INSIST(this%nsteps >= 0)
-
-    dims = shape(array)
-    INSIST(size(dims) >= 1 .and. size(dims) <= 3)
-    INSIST(dims(size(dims)) == this%ncell)
-
-    dset => this%temporal_cell_dsets
-    do while (associated(dset))
-      if (dset%name == name) exit
-      dset => dset%next
-    end do
-
-    if (associated(dset)) then
-      if (dset%flag) then
-        stat = 1
-        errmsg = 'dataset "' // name // '" already written for this time step'
-        return
-      else
-        call h5_append_to_dataset(this%cgrp_id, name, array, stat, errmsg)
-        if (stat /= 0) return
-        call h5_write_dataset_element(this%cogrp_id, name, this%nsteps, dset%next_offset, stat, errmsg)
-        if (stat /= 0) return
-        dset%next_offset = dset%next_offset + this%ncell
-        dset%flag = .true. ! dataset has been written for this time step
-      end if
-    else
-      stat = 1
-      errmsg = '"' // name // '" is not a valid temporal cell dataset'
-      return
-    end if
-
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%write_temporal_point_dataset_real64(name, array, stat, errmsg)
   end subroutine
 
-  !! Write the node-based data ARRAY for the named time-dependent cell dataset.
-  !! The data is associated with the current time step.
+  !! Write the cell-based data ARRAY to the named time-dependent cell dataset
+  !! for the specified mesh block. The data is associated with the current
+  !! time step.
 
-  subroutine write_temporal_point_dataset_real64(this, name, array, stat, errmsg)
-
+  subroutine write_temporal_cell_dataset_real64(this, block_name, name, array, stat, errmsg)
     class(vtkhdf_file), intent(in) :: this
-    character(*), intent(in) :: name
+    character(*), intent(in) :: block_name, name
     real(real64), intent(in) :: array(..)
     integer, intent(out) :: stat
     character(:), allocatable :: errmsg
+    type(vtkhdf_ug), pointer :: bptr
+    call this%get_block_ptr(block_name, bptr, stat, errmsg)
+    if (stat /= 0) return
+    call bptr%write_temporal_cell_dataset_real64(name, array, stat, errmsg)
+  end subroutine
 
-    integer, allocatable :: dims(:)
-    type(temporal_dataset), pointer :: dset
+  !! This auxiliary procedure returns a pointer to the named block, or a null
+  !! pointer if the block does not exist. If successful (block exists) STAT
+  !! returns 0; otherwise it returns a non-zero value and ERRMSG returns an
+  !! informative error message.
 
-    INSIST(this%nsteps >= 0)
+  subroutine get_block_ptr(this, name, bptr, stat, errmsg)
 
-    dims = shape(array)
-    INSIST(size(dims) >= 1 .and. size(dims) <= 3)
-    INSIST(dims(size(dims)) == this%nnode)
+    class(vtkhdf_file), intent(in) :: this
+    character(*), intent(in) :: name
+    type(vtkhdf_ug), pointer, intent(out) :: bptr
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
 
-    dset => this%temporal_point_dsets
-    do while (associated(dset))
-      if (dset%name == name) exit
-      dset => dset%next
+    type(pdc_block), pointer :: b
+
+    b => this%blocks
+    do while (associated(b))
+      if (b%name == name) exit
+      b => b%next
     end do
 
-    if (associated(dset)) then
-      if (dset%flag) then
-        stat = 1
-        errmsg = 'dataset "' // name // '" already written for this time step'
-        return
-      else
-        call h5_append_to_dataset(this%pgrp_id, name, array, stat, errmsg)
-        if (stat /= 0) return
-        call h5_write_dataset_element(this%pogrp_id, name, this%nsteps, dset%next_offset, stat, errmsg)
-        if (stat /= 0) return
-        dset%next_offset = dset%next_offset + this%nnode
-        dset%flag = .true. ! dataset has been written for this time step
-      end if
+    stat = merge(0, -1, associated(b))
+    if (stat == 0) then
+      bptr => b%b
     else
-      stat = 1
-      errmsg = '"' // name // '" is not a valid temporal point dataset'
-      return
+      bptr => null()
+      errmsg = 'no such block "' // name // '"'
     end if
 
-  end subroutine
+  end subroutine get_block_ptr
 
 end module vtkhdf_file_type

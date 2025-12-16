@@ -85,7 +85,17 @@ contains
       stat = 1
       errmsg = 'invalid mesh specification'
       this => null()
+      return
     end if
+
+    block ! assign default cell set names where needed.
+      use string_utilities, only: i_to_c
+      integer :: n
+      do n = 1, size(this%cell_set_name)
+        if (this%cell_set_name(n)%s == '') &
+            this%cell_set_name(n)%s = 'BLOCK' // i_to_c(this%cell_set_id(n))
+      end do
+    end block
 
   end function
 

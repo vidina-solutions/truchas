@@ -16,7 +16,7 @@
           }
       },
   "bodies":{
-      "body1": {"type": "element-block", "blockids": [2], "material": "foo"},
+      "body1": {"type": "element-block", "blockids": [1], "material": "foo"},
       "body2": {"type": "background", "material": "VOID"}
       },
   "bc": {
