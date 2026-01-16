@@ -51,7 +51,7 @@ contains
     if (is_IOP) call viz_file%create(filename, stat, errmsg)
     call broadcast(stat)
     if (stat /= 0) then
-      call broadcast(errmsg)
+      call broadcast_alloc_char(errmsg)
       return
     end if
 
@@ -65,7 +65,7 @@ contains
         if (is_IOP) call viz_file%create_block(name, stat, errmsg)
         call broadcast(stat)
         if (stat /= 0) then
-          call broadcast(errmsg)
+          call broadcast_alloc_char(errmsg)
           return
         end if
         bitmask = ibset(0,pos=j)

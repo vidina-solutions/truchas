@@ -255,7 +255,7 @@ contains
 
   subroutine graphics_output_init(this, filename, stat, errmsg)
 
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
     use,intrinsic :: iso_fortran_env, only: int8
 
     class(tdme_joule_heat_sim), intent(inout) :: this
@@ -272,7 +272,7 @@ contains
     if (is_IOP) call this%viz_file%create(filename, stat, errmsg)
     call broadcast(stat)
     if (stat /= 0) then
-      call broadcast(errmsg)
+      call broadcast_alloc_char(errmsg)
       return
     end if
 
@@ -284,7 +284,7 @@ contains
         if (is_IOP) call this%viz_file%create_block(name, stat, errmsg, temporal=.true.)
         call broadcast(stat)
         if (stat /= 0) then
-          call broadcast(errmsg)
+          call broadcast_alloc_char(errmsg)
           return
         end if
         bitmask = ibset(0,pos=n)
