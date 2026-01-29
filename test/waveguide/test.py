@@ -111,8 +111,8 @@ def run_test(tenv):
     nfail = 0
     stdout, output_base = tenv.truchas(4, "wg1.inp")
     golden_base = tenv.output("wg1_golden/wg1.h5")
-    output = output_base.em_data()
-    golden = golden_base.em_data()
+    output = output_base.em_data("BLOCK1")
+    golden = golden_base.em_data("BLOCK1")
 
     x = output.centroids()
     Ey_gold = E_analytic(x[:,0], x[:,2])

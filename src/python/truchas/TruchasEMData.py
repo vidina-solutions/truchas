@@ -27,9 +27,11 @@ class TruchasEMData:
     :type filename: str
     """
 
-    def __init__(self, filename):
+    def __init__(self, filename, blockname):
         self.filename = filename
-        """The filename of the HDF5 Truchas output."""
+        """The filename of the VTKHDF Truchas output."""
+        self.blockname = blockname
+        """The name of the mesh block in the VTKHDF file."""
         self.directory = os.path.dirname(filename)
         self._root = h5py.File(filename, 'r')
         self._centroid = None
@@ -37,8 +39,8 @@ class TruchasEMData:
         self._node_coordinates = None
         self._cnode = None
 
-        self.ncell = self._root["VTKHDF/NumberOfCells"][0]
-        self.nnode = self._root["VTKHDF/NumberOfPoints"][0]
+        self.ncell = self._root[f"VTKHDF/{self.blockname}/NumberOfCells"][0]
+        self.nnode = self._root[f"VTKHDF/{self.blockname}/NumberOfPoints"][0]
 
         self._compute_maps()
 
@@ -57,15 +59,15 @@ class TruchasEMData:
         :rtype: :class:`numpy.ndarray`
 
         """
-        field = self._root[f"VTKHDF/CellData/{field_name}"][:][self._cellmap]
+        field = self._root[f"VTKHDF/{self.blockname}/CellData/{field_name}"][:][self._cellmap]
         return field
 
 
     def _cell_node_map(self):
         """Load the cnode map."""
         if self._cnode is None:
-            cnode = self._root["VTKHDF/Connectivity"][:]
-            xcnode = self._root["VTKHDF/Offsets"][:]
+            cnode = self._root[f"VTKHDF/{self.blockname}/Connectivity"][:]
+            xcnode = self._root[f"VTKHDF/{self.blockname}/Offsets"][:]
             self._cnode = np.array([cnode[xcnode[i]:xcnode[i+1]] for i in range(len(xcnode)-1)])
         return self._cnode
 
@@ -118,5 +120,5 @@ class TruchasEMData:
         :rtype: :class:`numpy.ndarray`
         """
         if self._node_coordinates is None:
-            self._node_coordinates = self._root["VTKHDF/Points"][:]
+            self._node_coordinates = self._root[f"VTKHDF/{self.blockname}/Points"][:]
         return self._node_coordinates

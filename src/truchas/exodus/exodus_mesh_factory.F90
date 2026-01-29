@@ -279,6 +279,7 @@ contains
     mesh%num_eblk = 1
     allocate(mesh%eblk(mesh%num_eblk))
     mesh%eblk(1)%id = 1
+    mesh%eblk(1)%name = ''
     mesh%eblk(1)%num_elem = mesh%num_elem
     mesh%eblk(1)%num_nodes_per_elem = 4
     mesh%eblk(1)%elem_type = 'QUAD'
@@ -299,8 +300,8 @@ contains
     allocate(mesh%sset(mesh%num_sset))
 
     !! Side sets 1 and 2 (x = xmin, xmax)
-    mesh%sset(1)%id = 1
-    mesh%sset(2)%id = 2
+    mesh%sset(1)%id = 1; mesh%sset(1)%name = ''
+    mesh%sset(2)%id = 2; mesh%sset(2)%name = ''
     n = nzone(2)
     mesh%sset(1)%num_side = n
     mesh%sset(2)%num_side = n
@@ -314,8 +315,8 @@ contains
     mesh%sset(2)%face = 2
 
     !! Side sets 3 and 4 (y = ymin, ymax)
-    mesh%sset(3)%id = 3
-    mesh%sset(4)%id = 4
+    mesh%sset(3)%id = 3; mesh%sset(3)%name = ''
+    mesh%sset(4)%id = 4; mesh%sset(4)%name = ''
     n = nzone(1)
     mesh%sset(3)%num_side = n
     mesh%sset(4)%num_side = n
@@ -333,6 +334,9 @@ contains
     allocate(mesh%nset(4))
     mesh%nset%num_node = 1
     mesh%nset%id = [(i,i=1,4)]
+    do concurrent (i = 1:4)
+      mesh%nset(i)%name = ''
+    end do
     mesh%nset(1)%node = [node_index(0,0)]
     mesh%nset(2)%node = [node_index(nzone(1),0)]
     mesh%nset(3)%node = [node_index(nzone(1),nzone(2))]
@@ -443,6 +447,7 @@ contains
     mesh%num_eblk = 1
     allocate(mesh%eblk(mesh%num_eblk))
     mesh%eblk(1)%id = 1
+    mesh%eblk(1)%name = ''
     mesh%eblk(1)%num_elem = mesh%num_elem
     mesh%eblk(1)%num_nodes_per_elem = 8
     mesh%eblk(1)%elem_type = 'HEX8'
@@ -467,8 +472,8 @@ contains
     allocate(mesh%sset(mesh%num_sset))
 
     !! Side sets 1 and 2 (x = xmin, xmax)
-    mesh%sset(1)%id = 1
-    mesh%sset(2)%id = 2
+    mesh%sset(1)%id = 1; mesh%sset(1)%name = ''
+    mesh%sset(2)%id = 2; mesh%sset(2)%name = ''
     n = nzone(2)*nzone(3)
     mesh%sset(1)%num_side = n
     mesh%sset(2)%num_side = n
@@ -483,8 +488,8 @@ contains
     mesh%sset(2)%face = 2
 
     !! Side sets 3 and 4 (y = ymin, ymax)
-    mesh%sset(3)%id = 3
-    mesh%sset(4)%id = 4
+    mesh%sset(3)%id = 3; mesh%sset(3)%name = ''
+    mesh%sset(4)%id = 4; mesh%sset(4)%name = ''
     n = nzone(1)*nzone(3)
     mesh%sset(3)%num_side = n
     mesh%sset(4)%num_side = n
@@ -499,8 +504,8 @@ contains
     mesh%sset(4)%face = 3
 
     !! Side sets 5 and 6 (z = zmin, zmax)
-    mesh%sset(5)%id = 5
-    mesh%sset(6)%id = 6
+    mesh%sset(5)%id = 5; mesh%sset(5)%name = ''
+    mesh%sset(6)%id = 6; mesh%sset(6)%name = ''
     n = nzone(1)*nzone(2)
     mesh%sset(5)%num_side = n
     mesh%sset(6)%num_side = n
@@ -519,6 +524,9 @@ contains
     allocate(mesh%nset(8))
     mesh%nset%num_node = 1
     mesh%nset%id = [(i,i=1,8)]
+    do concurrent (i = 1:8)
+      mesh%nset(i)%name = ''
+    end do
     mesh%nset(1)%node = [node_index(0,0,0)]
     mesh%nset(2)%node = [node_index(nzone(1),0,0)]
     mesh%nset(3)%node = [node_index(nzone(1),nzone(2),0)]

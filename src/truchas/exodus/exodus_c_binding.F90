@@ -42,7 +42,7 @@
 
 module exodus_c_binding
 
-  use,intrinsic :: iso_c_binding, only: c_int, c_int64_t, c_float, c_char, c_ptr
+  use,intrinsic :: iso_c_binding
   implicit none
   private
 
@@ -70,16 +70,20 @@ module exodus_c_binding
   public :: ex_get_side_set         ! read side set
   public :: ex_put_side_set         ! write side set
   public :: ex_put_qa               ! write QA records
+  public :: ex_get_names            ! get names for various entity types
+  public :: ex_set_option           ! set value of option
+  public :: ex_inquire_int          ! get value of option
 
   !! Parameters from exodusII.h (version 8.25)
   integer(c_int), parameter :: EX_API_VERS_NODOT = 825 ! MUST MATCH THE INSTALLED LIBRARY
 
   integer, parameter, public :: MAX_STR_LENGTH  = 32
   integer, parameter, public :: MAX_LINE_LENGTH = 80
+  integer, parameter, public :: MAX_NAME_LENGTH = MAX_STR_LENGTH ! default; settable at runtime
+
 
   integer(c_int), parameter, public :: EX_READ  = int(z'2')
   integer(c_int), parameter, public :: EX_WRITE = int(z'1')
-
   integer(c_int), parameter, public :: EX_NOCLOBBER    =  int(z'4')
   integer(c_int), parameter, public :: EX_CLOBBER      =  int(z'8')
   integer(c_int), parameter, public :: EX_NORMAL_MODEL =  int(z'10')
@@ -91,6 +95,25 @@ module exodus_c_binding
   integer(c_int), parameter, public :: EX_SHARE        =  int(z'100')
   integer(c_int), parameter, public :: EX_NOCLASSIC    =  int(z'200')
 
+  enum, bind(c) ! ex_entity_type
+    enumerator :: EX_ELEM_BLOCK = 1
+    enumerator :: EX_NODE_SET   = 2
+    enumerator :: EX_SIDE_SET   = 3
+  end enum
+  public :: EX_ELEM_BLOCK, EX_NODE_SET, EX_SIDE_SET
+
+  enum, bind(c) ! ex_option_type
+    enumerator :: EX_OPT_MAX_NAME_LENGTH=1
+  end enum
+  public :: EX_OPT_MAX_NAME_LENGTH
+
+  enum, bind(c) ! ex_inquiry
+    enumerator :: EX_INQ_DB_MAX_USED_NAME_LENGTH = 49
+    enumerator :: EX_INQ_MAX_READ_NAME_LENGTH = 50
+  end enum
+  public :: EX_INQ_DB_MAX_USED_NAME_LENGTH, EX_INQ_MAX_READ_NAME_LENGTH
+
+  !! Default is MAX_STR_LENGTH, but can be set at run time
 
   interface
     function ex_open_int(path, mode, comp_ws, io_ws, version, run_version) &
@@ -336,6 +359,38 @@ module exodus_c_binding
     end function
   end interface
 
+  interface
+    function ex_get_names_c(exoid, ex_entity_type, names) &
+        result(error) bind(c,name='ex_get_names')
+      import c_int, c_ptr
+      integer(c_int), value :: exoid, ex_entity_type
+      type(c_ptr) :: names(*)
+      integer(c_int) :: error
+    end function
+  end interface
+
+  interface
+    function ex_set_option(exoid, option, value) result(error) bind(c)
+      import c_int
+      integer(c_int), value :: exoid, option, value
+      integer(c_int) :: error
+    end function
+    function ex_inquire_int(exoid, req_info) result(value) bind(c)
+      import c_int
+      integer(c_int), value :: exoid, req_info
+      integer(c_int) :: value
+    end function
+  end interface
+
+  interface ! for internal use
+    function strnlen_c(s, maxlen) result(n) bind(c,name='strnlen')
+      import c_ptr, c_size_t
+      type(c_ptr), value :: s
+      integer(c_size_t), value :: maxlen
+      integer(c_size_t) :: n
+    end function
+  end interface
+
 contains
 
   !! EX_OPEN is actually defined as a macro in exodusII.h.
@@ -492,5 +547,25 @@ contains
     integer(c_int) :: error
     error = ex_put_elem_conn_c(exoid, as64(elem_blk_id), connect)
   end function ex_put_elem_conn
+
+  ! Caller can use ex_inquire_int to get the length of names stored in the DB
+  ! and pass an appropriately defined NAMES argument
+  function ex_get_names(exoid, ex_entity_type, names) result(error)
+    integer(c_int), value :: exoid, ex_entity_type
+    character(*,kind=c_char), intent(out) :: names(:)
+    integer(c_int) :: error
+    character(len(names)+1,kind=c_char), target :: buffer(size(names))
+    type(c_ptr) :: cnames(size(names))
+    integer :: j, n
+    do j = 1, size(cnames)
+      cnames(j) = c_loc(buffer(j))
+    end do
+    error = ex_get_names_c(exoid, ex_entity_type, cnames)
+    if (error /= 0) return
+    do j = 1, size(cnames) ! strip off the null termination
+      n = strnlen_c(cnames(j), int(len(names),kind=c_size_t))
+      names(j) = buffer(j)(1:n)
+    end do
+  end function
 
 end module exodus_c_binding

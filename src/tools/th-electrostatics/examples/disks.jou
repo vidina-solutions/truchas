@@ -21,7 +21,9 @@ merge volume all
 compress all
 
 block 1 add volume 2
+block 1 name "dielectric"
 block 2 add volume 1
+block 2 name "vacuum"
 sideset 1 add surface 4 5 6
 sideset 1 name "left"
 sideset 2 add surface 1 2 3

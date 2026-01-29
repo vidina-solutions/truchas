@@ -304,6 +304,7 @@ contains
 
   subroutine write_vtk_graphics(this, filename, stat, errmsg)
 
+    use,intrinsic :: iso_fortran_env, only: int8
     use vtkhdf_file_type
 
     class(thes_sim), intent(in) :: this
@@ -312,98 +313,116 @@ contains
     character(:), allocatable, intent(out) :: errmsg
 
     type(vtkhdf_file) :: viz_file
-    real(r8), allocatable :: g_vector(:,:)
-    complex(r8), allocatable :: g_zscalar(:)
+    real(r8), allocatable :: x(:,:), l_vector(:,:), g_vector(:,:)
+    complex(r8), allocatable :: l_zscalar(:), g_zscalar(:), l_zvector(:,:), g_zvector(:,:)
+    complex(r8) :: grad_phi(3,this%mesh%ncell)
+    integer, allocatable :: xcnode(:), cnode(:), block_cells(:), block_nodes(:)
+    integer :: n, bitmask, ncell_tot, nnode_tot
+    integer(int8), allocatable :: types(:)
 
     if (is_IOP) call viz_file%create(filename, stat, errmsg)
     call broadcast(stat)
-    if (stat /= 0) return !NB: errmsg only set on IOP
+    if (stat /= 0) then
+      call broadcast_alloc_char(errmsg)
+      return
+    end if
 
-    call write_mesh
-
-    allocate(g_vector(size(this%vol_frac,dim=1),merge(this%mesh%cell_imap%global_size, 0, is_IOP)))
-    call gather(this%vol_frac(:,:this%mesh%ncell_onP), g_vector)
-    if (is_IOP) call viz_file%write_cell_dataset('vol-frac', g_vector, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
-
-    allocate(g_zscalar(merge(this%mesh%cell_imap%global_size, 0, is_IOP)))
-    call gather(this%eps(:this%mesh%ncell_onP), g_zscalar)
-    if (is_IOP) call viz_file%write_cell_dataset('eps_re', g_zscalar%re, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
-    if (is_IOP) call viz_file%write_cell_dataset('eps_im', [g_zscalar%im], stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
-
-    deallocate(g_zscalar)
-    allocate(g_zscalar(merge(this%mesh%node_imap%global_size, 0, is_IOP)))
-    call gather(this%phi(:this%mesh%nnode_onP), g_zscalar)
-    if (is_IOP) call viz_file%write_point_dataset('phi_re', g_zscalar%re, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
-    if (is_IOP) call viz_file%write_point_dataset('phi_im', [g_zscalar%im], stat, errmsg)
-    call broadcast(stat)
-    if (is_IOP) call viz_file%write_point_dataset('|phi|', abs(g_zscalar), stat, errmsg)
-    INSIST(stat == 0)
-
-    block ! Gradient of phi
+    block ! Cell averaged electric field phasor
       use mimetic_discretization, only: grad, w1_vector_on_cells
-      real(r8) :: w1(this%mesh%nedge), grad_phi(3,this%mesh%ncell)
-      if (allocated(g_vector)) deallocate(g_vector)
-      allocate(g_vector(3,merge(this%mesh%cell_imap%global_size,0,is_IOP)))
-      !! Real part of grad(phi)
+      real(r8) :: w1(this%mesh%nedge)
 #ifdef GNU_PR119986
       call grad(this%mesh, (this%phi%re), w1)
 #else
       call grad(this%mesh, this%phi%re, w1)
 #endif
-      grad_phi = w1_vector_on_cells(this%mesh, w1)
-      call gather(grad_phi(:,:this%mesh%ncell_onP), g_vector)
-      if (is_IOP) call viz_file%write_cell_dataset('grad phi_re', g_vector, stat, errmsg)
-      call broadcast(stat)
-      INSIST(stat == 0)
-      !! Imaginary part of grad(phi)
+      grad_phi%re = w1_vector_on_cells(this%mesh, w1)
 #ifdef GNU_PR119986
       call grad(this%mesh, (this%phi%im), w1)
 #else
       call grad(this%mesh, this%phi%im, w1)
 #endif
-      grad_phi = w1_vector_on_cells(this%mesh, w1)
-      call gather(grad_phi(:,:this%mesh%ncell_onP), g_vector)
-      if (is_IOP) call viz_file%write_cell_dataset('grad phi_im', g_vector, stat, errmsg)
-      call broadcast(stat)
-      INSIST(stat == 0)
+      grad_phi%im = w1_vector_on_cells(this%mesh, w1)
     end block
 
-  contains
+    do n = 1, size(this%mesh%cell_set_name)
+      associate (name => this%mesh%cell_set_name(n)%s)
+        if (is_IOP) call viz_file%create_block(name, stat, errmsg)
+        call broadcast(stat)
+        if (stat /= 0) then
+          call broadcast_alloc_char(errmsg)
+          return
+        end if
+        bitmask = ibset(0,pos=n)
+        call this%mesh%get_global_mesh_block(bitmask, x, xcnode, cnode, block_cells, block_nodes)
+        if (is_IOP) then
+          types = spread(VTK_TETRA, dim=1, ncopies=size(xcnode)-1)
+          call viz_file%write_block_mesh(name, x, cnode, xcnode, types, stat, errmsg)
+        end if
+        call broadcast(stat)
+        INSIST(stat == 0)
 
-    subroutine write_mesh
+        ncell_tot = global_sum(size(block_cells))
+        nnode_tot = global_sum(size(block_nodes))
 
-      use,intrinsic :: iso_fortran_env, only: int8
+        !! Cell-based material volume fractions
+        l_vector = this%vol_frac(:,block_cells)
+        allocate(g_vector(size(l_vector,dim=1),merge(ncell_tot,0,is_IOP)))
+        call gather(l_vector, g_vector)
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'vol-frac', g_vector, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
+        deallocate(g_vector, l_vector)
 
-      integer, allocatable, target :: cnode(:,:)
-      integer, allocatable :: xcnode(:)
-      integer(int8), allocatable :: types(:)
-      real(r8), allocatable :: x(:,:)
-      integer, pointer :: connectivity(:)
-      integer :: j, stat
-      character(:), allocatable :: errmsg
+        !! Cell-based complex permittivities
+        l_zscalar = this%eps(block_cells)
+        allocate(g_zscalar(merge(ncell_tot,0,is_IOP)))
+        call gather(l_zscalar, g_zscalar)
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'eps_re', g_zscalar%re, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
+#ifdef GNU_PR117774
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'eps_im', [g_zscalar%im], stat, errmsg)
+#else
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'eps_im', g_zscalar%im, stat, errmsg)
+#endif
+        call broadcast(stat)
+        INSIST(stat == 0)
+        deallocate(g_zscalar, l_zscalar)
 
-      !! Collate the mesh data structure onto the IO process
-      call this%mesh%get_global_cnode_array(cnode)
-      call this%mesh%get_global_x_array(x)
+        !! Node-based complex electric potential phasor
+        l_zscalar = this%phi(block_nodes)
+        allocate(g_zscalar(merge(nnode_tot, 0, is_IOP)))
+        call gather(l_zscalar, g_zscalar)
+        if (is_IOP) call viz_file%write_point_dataset(name, 'phi_re', g_zscalar%re, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
+#ifdef GNU_PR117774
+        if (is_IOP) call viz_file%write_point_dataset(name, 'phi_im', [g_zscalar%im], stat, errmsg)
+#else
+        if (is_IOP) call viz_file%write_point_dataset(name, 'phi_im', g_zscalar%im, stat, errmsg)
+#endif
+        call broadcast(stat)
+        if (is_IOP) call viz_file%write_point_dataset(name, '|phi|', abs(g_zscalar), stat, errmsg)
+        INSIST(stat == 0)
+        deallocate(g_zscalar, l_zscalar)
 
-      if (is_IOP) then
-        xcnode = [(1+4*j, j=0, size(cnode,dim=2))]
-        connectivity(1:size(cnode)) => cnode ! flattened view
-        types = spread(VTK_TETRA, dim=1, ncopies=size(cnode,dim=2))
-        call viz_file%write_mesh(x, connectivity, xcnode, types, stat, errmsg)
-      end if
-      call broadcast(stat)
-      INSIST(stat == 0)
-
-    end subroutine write_mesh
+        !! Cell-averaged electric field, grad(phi)
+        l_zvector = grad_phi(:,block_cells)
+        allocate(g_zvector(3,merge(ncell_tot, 0, is_IOP)))
+        call gather(l_zvector, g_zvector)
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'grad phi_re', g_zvector%re, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
+#ifdef GNU_PR117774
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'grad phi_im', reshape([g_zvector%im],shape(g_vector)), stat, errmsg)
+#else
+        if (is_IOP) call viz_file%write_cell_dataset(name, 'grad phi_im', g_zvector%im, stat, errmsg)
+#endif
+        call broadcast(stat)
+        INSIST(stat == 0)
+        deallocate(g_zvector, l_zvector)
+      end associate
+    end do
 
   end subroutine write_vtk_graphics
 

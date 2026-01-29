@@ -1,5 +1,8 @@
 #include "hdf5.h"
 hid_t H5P_DATASET_CREATE_value() { return H5P_DATASET_CREATE; }
+hid_t H5P_GROUP_CREATE_value() { return H5P_GROUP_CREATE; }
+hid_t H5P_CRT_ORDER_TRACKED_value() { return H5P_CRT_ORDER_TRACKED; }
+hid_t H5P_CRT_ORDER_INDEXED_value() { return H5P_CRT_ORDER_INDEXED; }
 hid_t H5T_NATIVE_INTEGER_value() { return H5Tcopy(H5T_NATIVE_INT); }
 hid_t H5T_NATIVE_DOUBLE_value() { return H5Tcopy(H5T_NATIVE_DOUBLE); }
 hid_t H5T_STD_U8LE_value() { return H5Tcopy(H5T_STD_U8LE); }

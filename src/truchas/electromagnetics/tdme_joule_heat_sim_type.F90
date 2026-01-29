@@ -55,10 +55,16 @@ module tdme_joule_heat_sim_type
     integer :: steps_per_cycle, max_cycles
     logical :: graphics_output
     type(vtkhdf_file) :: viz_file
+    type(viz_block), allocatable :: vblock(:)
   contains
     procedure :: init
     procedure :: compute
     final :: tdme_joule_heat_delete
+  end type
+
+  type :: viz_block
+    character(:), allocatable :: name
+    integer, allocatable :: block_cells(:), block_nodes(:)
   end type
 
 contains
@@ -249,126 +255,144 @@ contains
 
   subroutine graphics_output_init(this, filename, stat, errmsg)
 
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
+    use,intrinsic :: iso_fortran_env, only: int8
 
     class(tdme_joule_heat_sim), intent(inout) :: this
     character(*), intent(in) :: filename
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
+    integer :: n, bitmask
+    real(r8), allocatable :: x(:,:)
+    integer, allocatable :: xcnode(:), cnode(:)
+    integer(int8), allocatable :: types(:)
     real(r8) :: vec_mold(3,0), sca_mold(0)
 
     if (is_IOP) call this%viz_file%create(filename, stat, errmsg)
     call broadcast(stat)
     if (stat /= 0) then
-      call broadcast(errmsg)
+      call broadcast_alloc_char(errmsg)
       return
     end if
 
-    call export_mesh(this)
+    !! Create and write the block meshes
+    allocate(this%vblock(size(this%mesh%cell_set_name)))
+    do n = 1, size(this%vblock)
+      associate (name => this%mesh%cell_set_name(n)%s)
+        this%vblock(n)%name = name
+        if (is_IOP) call this%viz_file%create_block(name, stat, errmsg, temporal=.true.)
+        call broadcast(stat)
+        if (stat /= 0) then
+          call broadcast_alloc_char(errmsg)
+          return
+        end if
+        bitmask = ibset(0,pos=n)
+        call this%mesh%get_global_mesh_block(bitmask, x, xcnode, cnode, &
+            this%vblock(n)%block_cells, this%vblock(n)%block_nodes)
+        if (is_IOP) then
+          types = spread(VTK_TETRA, dim=1, ncopies=size(xcnode)-1)
+          call this%viz_file%write_block_mesh(name, x, cnode, xcnode, types, stat, errmsg)
+        end if
+        call broadcast(stat)
+        INSIST(stat == 0)
 
-    if (is_IOP) call this%viz_file%register_temporal_cell_dataset('E-field', vec_mold, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
+        if (is_IOP) call this%viz_file%register_temporal_cell_dataset(name, 'E-field', vec_mold, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
 
-    if (is_IOP) call this%viz_file%register_temporal_cell_dataset('B-field', vec_mold, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
+        if (is_IOP) call this%viz_file%register_temporal_cell_dataset(name, 'B-field', vec_mold, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
 
-    if (is_IOP) call this%viz_file%register_temporal_cell_dataset('Joule', sca_mold, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
+        if (is_IOP) call this%viz_file%register_temporal_cell_dataset(name, 'Joule', sca_mold, stat, errmsg)
+        call broadcast(stat)
+        INSIST(stat == 0)
+      end associate
+    end do
 
   end subroutine graphics_output_init
-
-  !! Write the mesh to the VTKHDF graphics file.
-
-  subroutine export_mesh(this)
-
-    use,intrinsic :: iso_fortran_env, only: int8
-    use parallel_communication, only: is_IOP, broadcast
-
-    class(tdme_joule_heat_sim), intent(inout) :: this
-
-    integer, allocatable, target :: cnode(:,:)
-    integer, allocatable :: xcnode(:)
-    integer(int8), allocatable :: types(:)
-    real(r8), allocatable :: x(:,:)
-    integer, pointer :: connectivity(:)
-    integer :: j, stat
-    character(:), allocatable :: errmsg
-
-    !! Collate the mesh data structure onto the IO process
-    call this%mesh%get_global_cnode_array(cnode)
-    call this%mesh%get_global_x_array(x)
-
-    if (is_IOP) then
-      xcnode = [(1+4*j, j=0, size(cnode,dim=2))]
-      connectivity(1:size(cnode)) => cnode ! flattened view
-      types = spread(VTK_TETRA, dim=1, ncopies=size(cnode,dim=2))
-      call this%viz_file%write_mesh(x, connectivity, xcnode, types, stat, errmsg)
-    end if
-    call broadcast(stat)
-    INSIST(stat == 0)
-
-  end subroutine export_mesh
 
   !! Write the given cell-based scalar field to the VTKHDF file as a
   !! time-independent dataset with the given name.
 
   subroutine export_scalar_cell_field(this, field, name)
-    use parallel_communication, only: is_IOP, broadcast, gather
+    use parallel_communication, only: is_IOP, broadcast, gather, global_sum
     class(tdme_joule_heat_sim), intent(in) :: this
     real(r8), intent(in) :: field(:)
     character(*), intent(in) :: name
     integer :: stat
     character(:), allocatable :: errmsg
-    real(r8), allocatable :: g_field(:)
-    allocate(g_field(merge(this%mesh%cell_imap%global_size, 0, is_IOP)))
-    call gather(field(:this%mesh%ncell_onP), g_field)
-    if (is_IOP) call this%viz_file%write_cell_dataset(name, g_field, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
+    integer :: j, n
+    real(r8), allocatable :: l_field(:), g_field(:)
+    do j = 1, size(this%vblock)
+      l_field = field(this%vblock(j)%block_cells)
+      n = global_sum(size(l_field))
+      allocate(g_field(merge(n, 0, is_IOP)))
+      call gather(l_field, g_field)
+      if (is_IOP) call this%viz_file%write_cell_dataset(this%vblock(j)%name, name, g_field, stat, errmsg)
+      call broadcast(stat)
+      INSIST(stat == 0)
+      deallocate(g_field)
+    end do
   end subroutine
 
   !! Write the given time-dependent EM fields to the VTKHDF graphics file.
 
   subroutine export_fields(this, t, efield, bfield, qfield)
 
-    use parallel_communication, only: is_IOP, broadcast, gather
+    use parallel_communication, only: is_IOP, broadcast, gather, global_sum
     use mimetic_discretization, only: w1_vector_on_cells, w2_vector_on_cells
 
     class(tdme_joule_heat_sim), intent(inout) :: this
     real(r8), intent(in) :: t, efield(:), bfield(:), qfield(:)
 
+    integer :: j, n
     real(r8) :: v(3,this%mesh%ncell)
-    real(r8), allocatable :: g_v(:,:), g_s(:)
+    real(r8), allocatable :: g_v(:,:), g_s(:), l_v(:,:), l_s(:)
     integer :: stat
     character(:), allocatable :: errmsg
 
     if (is_IOP) call this%viz_file%write_time_step(this%freq*t) ! induction field cycle number
 
-    allocate(g_v(3,merge(this%mesh%cell_imap%global_size,0,is_iop)))
-    allocate(g_s(merge(this%mesh%cell_imap%global_size,0,is_iop)))
-
     !! Interpolate cell average E-field from the primitive E-field edge circulations.
     v = w1_vector_on_cells(this%mesh, efield)
-    call gather(v(:,:this%mesh%ncell_onP), g_v)
-    if (is_IOP) call this%viz_file%write_temporal_cell_dataset('E-field', g_v, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
+
+    do j = 1, size(this%vblock)
+      n = global_sum(size(this%vblock(j)%block_cells))
+      allocate(g_v(3,merge(n,0,is_iop)))
+      l_v = v(:,this%vblock(j)%block_cells)
+      call gather(l_v, g_v)
+      if (is_IOP) call this%viz_file%write_temporal_cell_dataset(this%vblock(j)%name, 'E-field', g_v, stat, errmsg)
+      call broadcast(stat)
+      INSIST(stat == 0)
+      deallocate(g_v)
+    end do
 
     !! Interpolate cell average B-field from the primitive B-field face fluxes.
     v = w2_vector_on_cells(this%mesh, bfield)
-    call gather(v(:,:this%mesh%ncell_onP), g_v)
-    if (is_IOP) call this%viz_file%write_temporal_cell_dataset('B-field', g_v, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
 
-    call gather(qfield(:this%mesh%ncell_onP), g_s)
-    if (is_IOP) call this%viz_file%write_temporal_cell_dataset('Joule', g_s, stat, errmsg)
-    call broadcast(stat)
-    INSIST(stat == 0)
+    do j = 1, size(this%vblock)
+      n = global_sum(size(this%vblock(j)%block_cells))
+      allocate(g_v(3,merge(n,0,is_iop)))
+      l_v = v(:,this%vblock(j)%block_cells)
+      call gather(l_v, g_v)
+      if (is_IOP) call this%viz_file%write_temporal_cell_dataset(this%vblock(j)%name, 'B-field', g_v, stat, errmsg)
+      call broadcast(stat)
+      INSIST(stat == 0)
+      deallocate(g_v)
+    end do
+
+    do j = 1, size(this%vblock)
+      n = global_sum(size(this%vblock(j)%block_cells))
+      allocate(g_s(merge(n,0,is_iop)))
+      l_s = qfield(this%vblock(j)%block_cells)
+      call gather(l_s, g_s)
+      if (is_IOP) call this%viz_file%write_temporal_cell_dataset(this%vblock(j)%name, 'Joule', g_s, stat, errmsg)
+      call broadcast(stat)
+      INSIST(stat == 0)
+      deallocate(g_s)
+    end do
 
   end subroutine
 

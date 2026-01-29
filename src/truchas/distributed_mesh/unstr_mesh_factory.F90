@@ -65,7 +65,17 @@ contains
       stat = 1
       errmsg = 'invalid mesh specification'
       this => null()
+      return
     end if
+
+    block ! assign default cell set names where needed.
+      use string_utilities, only: i_to_c
+      integer :: n
+      do n = 1, size(this%cell_set_name)
+        if (this%cell_set_name(n)%s == '') &
+            this%cell_set_name(n)%s = 'BLOCK' // i_to_c(this%cell_set_id(n))
+      end do
+    end block
 
   end function new_unstr_mesh
 
@@ -114,9 +124,10 @@ contains
     character(:), allocatable :: errmsg
     type(unstr_mesh), pointer :: this
 
-    integer :: n, new_id, exodus_block_modulus
+    integer :: i, n, m, new_id, exodus_block_modulus
     integer, allocatable :: ssid(:), ebid(:)
-    character(:), allocatable :: mesh_file, msg
+    character(:), allocatable :: mesh_file, msg, new_name
+    logical, allocatable :: mask(:)
     type(ext_exodus_mesh) :: mesh
 
     !! Read the Exodus mesh file into MESH.
@@ -142,6 +153,22 @@ contains
               id = new_id
             end if
           end associate
+        end do
+        !! Restore the original names of blocks that had congruent IDs.
+        allocate(mask(mesh%num_eblk), source=.false.)
+        do n = 1, mesh%num_eblk
+          if (mask(n)) cycle
+          do m = n+1, mesh%num_eblk
+            if (mesh%eblk(m)%id /= mesh%eblk(n)%id) cycle
+            if (.not.allocated(new_name)) then
+              i = scan(mesh%eblk(n)%name, '_', back=.true.)
+              new_name = mesh%eblk(n)%name(:i-1)
+              mesh%eblk(n)%name = new_name
+            end if
+            mesh%eblk(m)%name = new_name
+            mask(m) = .true.
+          end do
+          if (allocated(new_name)) deallocate(new_name)
         end do
       end if
     end if
@@ -1313,7 +1340,7 @@ contains
 
     use exodus_mesh_type
     use bitfield_type
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
 
     type(unstr_mesh), intent(inout) :: this
     class(exodus_mesh), intent(in) :: mesh
@@ -1356,6 +1383,13 @@ contains
     if (is_IOP) this%node_set_id = mesh%nset%id
     call broadcast(this%node_set_id)
 
+    !! Initialize the list of node set names (%NODE_SET_NAME)
+    allocate(this%node_set_name(n))
+    do i = 1, n
+      if (is_IOP) this%node_set_name(i)%s = mesh%nset(i)%name
+      call broadcast_alloc_char(this%node_set_name(i)%s)
+    end do
+
     !! Tag boundary nodes in the node set mask (bit 0).
     allocate(bnode(this%nnode))
     bnode = .false.
@@ -1390,7 +1424,7 @@ contains
     use exodus_mesh_type
     use integer_set_type
     use permutations, only: reorder
-    use parallel_communication, only: is_IOP, broadcast, gather
+    use parallel_communication, only: is_IOP, broadcast, gather, broadcast_alloc_char
 
     type(unstr_mesh), intent(inout) :: this
     class(exodus_mesh), intent(in) :: mesh
@@ -1410,6 +1444,21 @@ contains
     allocate(this%cell_set_id(n))
     if (is_IOP) this%cell_set_id = id_set
     call broadcast(this%cell_set_id)
+
+    !! Initialize the corresponding list of cell set names.
+    allocate(this%cell_set_name(n))
+    if (is_IOP) then
+      do i = 1, size(this%cell_set_id)
+        do n = 1, size(mesh%eblk) ! find matching element block
+          if (mesh%eblk(n)%id == this%cell_set_id(i)) exit
+        end do
+        INSIST(n <= size(mesh%eblk))
+        this%cell_set_name(i)%s = mesh%eblk(n)%name
+      end do
+    end if
+    do i = 1, size(this%cell_set_name)
+      call broadcast_alloc_char(this%cell_set_name(i)%s)
+    end do
 
     ncell_tot = this%cell_imap%global_size
 
@@ -1457,7 +1506,7 @@ contains
 
     use bitfield_type
     use exodus_mesh_type
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
 
     type(unstr_mesh), intent(inout) :: this
     class(exodus_mesh), intent(in) :: mesh
@@ -1509,12 +1558,19 @@ contains
     call gather_offp(this%face_imap, this%face_set_mask)
     deallocate(face_set_mask)
 
-    !! Initialize the list of cell set IDs (%FACE_SET_ID)
+    !! Initialize the list of face set IDs (%FACE_SET_ID)
     if (is_IOP) n = size(mesh%sset)
     call broadcast(n)
     allocate(this%face_set_id(n))
     if (is_IOP) this%face_set_ID = mesh%sset%id
     call broadcast(this%face_set_id)
+
+    !! Initialize the list of face set names (%FACE_SET_NAME)
+    allocate(this%face_set_name(n))
+    do i = 1, n
+      if (is_IOP) this%face_set_name(i)%s = mesh%sset(i)%name
+      call broadcast_alloc_char(this%face_set_name(i)%s)
+    end do
 
   end subroutine init_face_set_data
 

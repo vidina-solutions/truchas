@@ -146,6 +146,7 @@ module simpl_mesh_type
     procedure :: get_global_cface_array
     procedure :: get_global_fnode_array
     procedure :: get_global_cblock_array
+    procedure :: get_global_mesh_block
     procedure :: compute_geometry
     procedure :: write_profile
     procedure :: write_faces_vtk
@@ -362,5 +363,86 @@ contains
     if (is_IOP) close(lun)
 
   end subroutine write_faces_vtk
+
+  subroutine get_global_mesh_block(this, bitmask, x, xcnode, cnode, block_cells, block_nodes)
+
+    use parallel_communication, only: is_IOP, sum_scan, global_sum, gather
+
+    class(simpl_mesh), intent(in) :: this
+    integer(kind(this%cell_set_mask)), intent(in) :: bitmask
+    real(r8), allocatable, intent(out) :: x(:,:)
+    integer, allocatable, intent(out) :: xcnode(:), cnode(:), block_cells(:), block_nodes(:)
+
+    integer :: j, n, ncell, nnode, offset
+    integer, allocatable :: cnode_l(:), nmap(:)
+
+    !! Count of the on-process block cells.
+    ncell = 0
+    do j = 1, this%ncell_onp
+      if (popcnt(iand(bitmask, this%cell_set_mask(j))) /= 0) ncell = ncell + 1
+    end do
+
+    !! List of on-process block cells and their connectivity info.
+    allocate(block_cells(ncell), cnode_l(4*ncell))
+    n = 0
+    offset = 0
+    do j = 1, this%ncell_onP
+      if (popcnt(iand(bitmask, this%cell_set_mask(j))) == 0) cycle
+      n = n + 1
+      block_cells(n) = j
+      cnode_l(offset+1:offset+4) = this%cnode(:,j)
+      offset = offset + 4
+    end do
+
+    !! Tag all nodes belonging to the block cells.
+    allocate(nmap(this%nnode), source=0)
+    do j = 1, size(cnode_l)
+      nmap(cnode_l(j)) = 1
+    end do
+    call this%node_imap%scatter_offp_max(nmap)
+
+    !! List of on-process block nodes.
+    nnode = count(nmap(:this%nnode_onp) /= 0)
+    allocate(block_nodes(nnode))
+    n = 0
+    do j = 1, this%nnode_onp
+      if (nmap(j) == 0) cycle
+      n = n + 1
+      block_nodes(n) = j
+    end do
+
+    !! Create the mapping from local node indices to the global sequential
+    !! numbering of block nodes; non-block nodes are mapped to 0.
+    call sum_scan(nnode, n)
+    n = n - nnode ! numbering offset
+    do j = 1, this%nnode_onp
+      if (nmap(j) == 0) cycle
+      n = n + 1
+      nmap(j) = n
+    end do
+    call this%node_imap%gather_offp(nmap)
+
+    !! Map local block connectivity info to global block node numbering.
+    do j = 1, size(cnode_l)
+      cnode_l(j) = nmap(cnode_l(j))
+    end do
+
+    !! Collate global connectivity info for the block.
+    n = global_sum(ncell)
+    allocate(cnode(merge(4*n,0,is_IOP)), xcnode(merge(n+1,0,is_IOP)))
+    call gather(cnode_l, cnode)
+    if (is_IOP) then
+      xcnode(1) = 1
+      do j = 1, n
+        xcnode(j+1) = xcnode(j) + 4 ! all tet cells
+      end do
+    end if
+
+    !! Collate global block node positions.
+    n = global_sum(nnode)
+    allocate(x(3,merge(n,0,is_IOP)))
+    call gather(this%x(:,block_nodes), x)
+
+  end subroutine get_global_mesh_block
 
 end module simpl_mesh_type

@@ -152,7 +152,7 @@ module exodus_mesh_type
 
   type, public :: elem_blk
     integer :: id = 0, num_elem = 0, num_nodes_per_elem = 0
-    character(:), allocatable :: elem_type
+    character(:), allocatable :: elem_type, name
     integer, allocatable :: connect(:,:)
   contains
     !! Debugging methods
@@ -162,6 +162,7 @@ module exodus_mesh_type
 
   type, public :: node_set
     integer :: id = 0, num_node = 0
+    character(:), allocatable :: name
     integer, allocatable :: node(:)
   contains
     !! Debugging methods
@@ -171,6 +172,7 @@ module exodus_mesh_type
 
   type, public :: side_set
     integer :: id = 0, num_side = 0
+    character(:), allocatable :: name
     integer, allocatable :: elem(:), face(:)
   contains
     !! Debugging methods

@@ -1,156 +1,132 @@
 program vtkhdf_demo
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64, int8
-  !use hdf5_c_binding
-  !use hl_hdf5
   use vtkhdf_file_type
   implicit none
 
-  integer :: stat
-!  integer(hid_t) :: file_id, grp_id, steps_id, pgrp_id, pogrp_id, cgrp_id, cogrp_id
-  real(r8), allocatable :: x(:,:), scalar_cell_data(:), vector_cell_data(:,:)
-  real(r8), allocatable :: scalar_point_data(:), vector_point_data(:,:)
-  integer, allocatable :: cnode(:), xcnode(:)
-  integer(int8), allocatable :: types(:)
-  character(:), allocatable :: errmsg
-
   type(vtkhdf_file) :: vizfile
-  
+  integer :: stat, j
+  character(:), allocatable :: errmsg, name(:)
+  real(r8), allocatable :: x(:,:)
+  integer,  allocatable :: cnode(:), xcnode(:)
+  integer(int8), allocatable :: types(:)
+  real(r8), allocatable :: scalar_cell_data(:), vector_cell_data(:,:)
+  real(r8), allocatable :: scalar_point_data(:), vector_point_data(:,:)
+  real(r8) :: vec_mold(3,0), sca_mold(0)
+
+
   call vizfile%create('demo.vtkhdf', stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+  if (stat /= 0) error stop errmsg
 
-  call get_mesh1_data(x, cnode, xcnode, types)
-  call vizfile%write_mesh(x, cnode, xcnode, types, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+  !! The MultiBlockDataSet VTK mesh will consist of two blocks.
+  name = ['part1', 'part2']
 
-  call get_scalar_cell_data(x, cnode, xcnode, scalar_cell_data)
-  call get_vector_cell_data(x, cnode, xcnode, vector_cell_data)
+  !! The unstructured mesh data for one mesh block; shift it for the second.
+  call get_mesh_data(x, cnode, xcnode, types)
 
-  call get_scalar_point_data(x, scalar_point_data)
-  call get_vector_point_data(x, vector_point_data)
-  
-  !! Register the datasets that evolve with time. At this stage the data arrays
-  !! are only used to glean their types and shapes.
+  !! Create the mesh blocks and export the mesh for each.
+  !! NB: Not all blocks (or any) need to be temporal, but choose to do so here.
+  do j = 1, 2
+    call vizfile%create_block(name(j), stat, errmsg, temporal=.true.)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%register_temporal_cell_dataset('cell-radius', scalar_cell_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
-  
-  call vizfile%register_temporal_cell_dataset('cell-velocity', vector_cell_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
-  
-  call vizfile%register_temporal_point_dataset('point-radius', scalar_point_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
-  
-  call vizfile%register_temporal_point_dataset('point-velocity', vector_point_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_block_mesh(name(j), x+(j-1), cnode, xcnode, types, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+  end do
+
+  !!!! Register the datasets that evolve with time.
+
+  do j = 1, 2
+    call vizfile%register_temporal_cell_dataset(name(j), 'cell-radius', sca_mold, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+
+    call vizfile%register_temporal_cell_dataset(name(j), 'cell-velocity', vec_mold, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+
+    call vizfile%register_temporal_point_dataset(name(j), 'point-radius', sca_mold, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+
+    call vizfile%register_temporal_point_dataset(name(j), 'point-velocity', vec_mold, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+  end do
 
   !!!! Write the datasets for the first time step !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   call vizfile%write_time_step(0.0_r8)
 
-  call vizfile%write_temporal_cell_dataset('cell-radius', scalar_cell_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+  do j = 1, 2
+    !! Generate example datasets for the block.
+    call get_scalar_cell_data(x+(j-1), cnode, xcnode, scalar_cell_data)
+    call get_vector_cell_data(x+(j-1), cnode, xcnode, vector_cell_data)
+    call get_scalar_point_data(x+(j-1), scalar_point_data)
+    call get_vector_point_data(x+(j-1), vector_point_data)
 
-  call vizfile%write_temporal_cell_dataset('cell-velocity', vector_cell_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_temporal_cell_dataset(name(j), 'cell-radius', scalar_cell_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%write_temporal_point_dataset('point-radius', scalar_point_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_temporal_cell_dataset(name(j), 'cell-velocity', vector_cell_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%write_temporal_point_dataset('point-velocity', vector_point_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_temporal_point_dataset(name(j), 'point-radius', scalar_point_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+
+    call vizfile%write_temporal_point_dataset(name(j), 'point-velocity', vector_point_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+  end do
 
   !!!! Write the datasets for the second time step !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
   call vizfile%write_time_step(10.0_r8)
 
-  call vizfile%write_temporal_cell_dataset('cell-radius', scalar_cell_data+1, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+  do j = 1, 2
+    !! Generate example datasets for the block.
+    call get_scalar_cell_data(x+(j-1), cnode, xcnode, scalar_cell_data)
+    call get_vector_cell_data(x+(j-1), cnode, xcnode, vector_cell_data)
+    call get_scalar_point_data(x+(j-1), scalar_point_data)
+    call get_vector_point_data(x+(j-1), vector_point_data)
 
-  call vizfile%write_temporal_cell_dataset('cell-velocity', vector_cell_data+1, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_temporal_cell_dataset(name(j), 'cell-radius', 1+scalar_cell_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%write_temporal_point_dataset('point-radius', scalar_point_data+1, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_temporal_cell_dataset(name(j), 'cell-velocity', 1+vector_cell_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%write_temporal_point_dataset('point-velocity', vector_point_data+1, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_temporal_point_dataset(name(j), 'point-radius', 1+scalar_point_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+
+    call vizfile%write_temporal_point_dataset(name(j), 'point-velocity', 1+vector_point_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+  end do
 
   !! At any point you can write a dataset that isn't time dependent, but its name must
-  !! be unique from any other dataset temporal or not of the same type (cell or point).
+  !! be unique from any other dataset, temporal or not, of the same type (cell or point).
 
-  call vizfile%write_cell_dataset('static-cell-scalar', -scalar_cell_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+  do j = 1, 2
+    !! Generate example datasets for the block.
+    call get_scalar_cell_data(x+(j-1), cnode, xcnode, scalar_cell_data)
+    call get_vector_cell_data(x+(j-1), cnode, xcnode, vector_cell_data)
+    call get_scalar_point_data(x+(j-1), scalar_point_data)
+    call get_vector_point_data(x+(j-1), vector_point_data)
 
-  call vizfile%write_cell_dataset('static-cell-vector', -vector_cell_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_cell_dataset(name(j), 'static-cell-scalar', -scalar_cell_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%write_point_dataset('static-point-scalar', -scalar_point_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_cell_dataset(name(j), 'static-cell-vector', -vector_cell_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
 
-  call vizfile%write_point_dataset('static-point-vector', -vector_point_data, stat, errmsg)
-  if (stat /= 0) then
-    print *, errmsg
-    stop 1
-  end if
+    call vizfile%write_point_dataset(name(j), 'static-point-scalar', -scalar_point_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+
+    call vizfile%write_point_dataset(name(j), 'static-point-vector', -vector_point_data, stat, errmsg)
+    if (stat /= 0) error stop errmsg
+  end do
 
   call vizfile%close
 
 contains
 
   ! A 5-tet subdivision of the squished unit cube.
-  subroutine get_mesh1_data(x, cnode, xcnode, types)
+  subroutine get_mesh_data(x, cnode, xcnode, types)
     real(r8), allocatable, intent(out) :: x(:,:)
     integer, allocatable, intent(out) :: cnode(:), xcnode(:)
     integer(int8), allocatable :: types(:)

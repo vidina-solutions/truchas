@@ -63,6 +63,9 @@ module hdf5_c_binding
   integer(hid_t), protected :: H5T_NATIVE_CHARACTER
   integer(hid_t), protected :: H5T_STD_U8LE
   integer(hid_t), protected :: H5P_DATASET_CREATE
+  integer(hid_t), protected :: H5P_GROUP_CREATE
+  integer(hid_t), protected :: H5P_CRT_ORDER_TRACKED
+  integer(hid_t), protected :: H5P_CRT_ORDER_INDEXED
 
   !!!! H5F functions that can be used as-is !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -239,6 +242,14 @@ module hdf5_c_binding
       integer(c_int) :: hdferr
     end function
 
+    function H5Pset_link_creation_order(plist_id, crt_order_flags) &
+        result(hdferr) bind(c,name='H5Pset_link_creation_order')
+      import :: hid_t, c_int
+      integer(hid_t), value :: plist_id
+      integer(c_int), value :: crt_order_flags ! really unsigned
+      integer(c_int) :: hdferr
+    end function
+
     function H5Pclose(prp_id) result(h5err) bind(c,name='H5Pclose')
       import :: hid_t, c_int
       integer(hid_t), value :: prp_id
@@ -246,15 +257,29 @@ module hdf5_c_binding
     end function
   end interface
 
-  public :: H5Pcreate, H5Pset_chunk, H5Pclose
-  
-  public :: H5Lexists ! module procedure
+  public :: H5Pcreate, H5Pset_chunk, H5Pset_link_creation_order, H5Pclose
+
+  !!!! H5L functions
+
+  public :: H5Lexists, H5Lcreate_soft, H5Lcreate_hard ! module procedures
 
 contains
 
   subroutine init_hdf5
     interface
       function H5P_DATASET_CREATE_value() result(flag) bind(c,name='H5P_DATASET_CREATE_value')
+        import :: hid_t
+        integer(hid_t) :: flag
+      end function
+      function H5P_GROUP_CREATE_value() result(flag) bind(c,name='H5P_GROUP_CREATE_value')
+        import :: hid_t
+        integer(hid_t) :: flag
+      end function
+      function H5P_CRT_ORDER_TRACKED_value() result(flag) bind(c,name='H5P_CRT_ORDER_TRACKED_value')
+        import :: hid_t
+        integer(hid_t) :: flag
+      end function
+      function H5P_CRT_ORDER_INDEXED_value() result(flag) bind(c,name='H5P_CRT_ORDER_INDEXED_value')
         import :: hid_t
         integer(hid_t) :: flag
       end function
@@ -276,6 +301,9 @@ contains
       end function
     end interface
     H5P_DATASET_CREATE = H5P_DATASET_CREATE_value()
+    H5P_GROUP_CREATE = H5P_GROUP_CREATE_value()
+    H5P_CRT_ORDER_TRACKED = H5P_CRT_ORDER_TRACKED_value()
+    H5P_CRT_ORDER_INDEXED = H5P_CRT_ORDER_INDEXED_value()
     H5T_NATIVE_INTEGER = H5T_NATIVE_INTEGER_value()
     H5T_NATIVE_DOUBLE = H5T_NATIVE_DOUBLE_value()
     H5T_NATIVE_CHARACTER = H5T_NATIVE_CHARACTER_value()
@@ -567,6 +595,49 @@ contains
     integer(hid_t) :: lapl_id_
     lapl_id_ = H5P_DEFAULT; if (present(lapl_id)) lapl_id_ = lapl_id
     exists = (H5Lexists_c(loc_id, name//c_null_char, lapl_id_) > 0)
+  end function
+
+  function H5Lcreate_soft(link_target, link_loc_id, link_name, lcpl_id, lapl_id) result(h5err)
+    character(*), intent(in) :: link_target, link_name
+    integer(hid_t), intent(in) :: link_loc_id
+    integer(hid_t), intent(in), optional :: lcpl_id, lapl_id
+    integer(c_int) :: h5err
+    interface
+      function H5Lcreate_soft_c(link_target, link_loc_id, link_name, lcpl_id, lapl_id) &
+          result(h5err) bind(c,name='H5Lcreate_soft')
+        import :: hid_t, c_int
+        character, intent(in) :: link_target(*), link_name(*)
+        integer(hid_t), value :: link_loc_id, lcpl_id, lapl_id
+        integer(c_int) :: h5err
+      end function
+    end interface
+    integer(hid_t) :: lcpl_id_, lapl_id_
+    lcpl_id_ = H5P_DEFAULT; if (present(lcpl_id)) lcpl_id_ = lcpl_id
+    lapl_id_ = H5P_DEFAULT; if (present(lapl_id)) lapl_id_ = lapl_id
+    h5err = H5Lcreate_soft_c(link_target//c_null_char, link_loc_id, link_name//c_null_char, &
+                             lcpl_id_, lapl_id_)
+  end function
+
+  function H5Lcreate_hard(cur_loc, cur_name, dst_loc, dst_name, lcpl_id, lapl_id) result(h5err)
+    integer(hid_t), intent(in) :: cur_loc, dst_loc
+    character(*), intent(in) :: cur_name, dst_name
+    integer(hid_t), intent(in), optional :: lcpl_id, lapl_id
+    integer(c_int) :: h5err
+    interface
+      function H5Lcreate_hard_c(cur_loc, cur_name, dst_loc, dst_name, lcpl_id, lapl_id) &
+          result(h5err) bind(c,name='H5Lcreate_hard')
+        import :: hid_t, c_int
+        integer(hid_t), value :: cur_loc, dst_loc
+        character, intent(in) :: cur_name(*), dst_name(*)
+        integer(hid_t), value :: lcpl_id, lapl_id
+        integer(c_int) :: h5err
+      end function
+    end interface
+    integer(hid_t) :: lcpl_id_, lapl_id_
+    lcpl_id_ = H5P_DEFAULT; if (present(lcpl_id)) lcpl_id_ = lcpl_id
+    lapl_id_ = H5P_DEFAULT; if (present(lapl_id)) lapl_id_ = lapl_id
+    h5err = H5Lcreate_hard_c(cur_loc, cur_name//c_null_char, dst_loc, dst_name//c_null_char, &
+                             lcpl_id_, lapl_id_)
   end function
 
 end module hdf5_c_binding

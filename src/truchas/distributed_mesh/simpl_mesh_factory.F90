@@ -85,7 +85,17 @@ contains
       stat = 1
       errmsg = 'invalid mesh specification'
       this => null()
+      return
     end if
+
+    block ! assign default cell set names where needed.
+      use string_utilities, only: i_to_c
+      integer :: n
+      do n = 1, size(this%cell_set_name)
+        if (this%cell_set_name(n)%s == '') &
+            this%cell_set_name(n)%s = 'BLOCK' // i_to_c(this%cell_set_id(n))
+      end do
+    end block
 
   end function
 
@@ -804,7 +814,7 @@ contains
 
     use exodus_mesh_type
     use bitfield_type
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
 
     type(simpl_mesh), intent(inout) :: this
     class(exodus_mesh), intent(in) :: exo_mesh
@@ -846,6 +856,13 @@ contains
     if (is_IOP) this%node_set_id = exo_mesh%nset%id
     call broadcast (this%node_set_id)
 
+    !! Initialize the list of node set names (%NODE_SET_NAME)
+    allocate(this%node_set_name(n))
+    do i = 1, n
+      if (is_IOP) this%node_set_name(i)%s = exo_mesh%nset(i)%name
+      call broadcast_alloc_char(this%node_set_name(i)%s)
+    end do
+
     !! Tag boundary nodes in the node set mask (bit 0).
     allocate(bnode(this%nnode))
     bnode = .false.
@@ -869,7 +886,7 @@ contains
 
     use exodus_mesh_type
     use permutations, only: reorder
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
 
     type(simpl_mesh), intent(inout) :: this
     class(exodus_mesh), intent(in) :: exo_mesh
@@ -911,6 +928,13 @@ contains
     if (is_IOP) this%cell_set_id = exo_mesh%eblk%id
     call broadcast (this%cell_set_id)
 
+    !! Initialize the list of cell set names (%CELL_SET_NAME)
+    allocate(this%cell_set_name(n))
+    do i = 1, n
+      if (is_IOP) this%cell_set_name(i)%s = exo_mesh%eblk(i)%name
+      call broadcast_alloc_char(this%cell_set_name(i)%s)
+    end do
+
   end subroutine init_cell_set_data
 
   !! This subroutine initializes the face set data components.  FACE_SET_MASK
@@ -926,7 +950,7 @@ contains
 
     use bitfield_type
     use exodus_mesh_type
-    use parallel_communication, only: is_IOP, broadcast
+    use parallel_communication, only: is_IOP, broadcast, broadcast_alloc_char
 
     type(simpl_mesh), intent(inout) :: this
     class(exodus_mesh), intent(in) :: exo_mesh
@@ -986,6 +1010,13 @@ contains
     allocate(this%face_set_id(n))
     if (is_IOP) this%face_set_ID = exo_mesh%sset%id
     call broadcast (this%face_set_id)
+
+    !! Initialize the list of face set names (%FACE_SET_NAME)
+    allocate(this%face_set_name(n))
+    do i = 1, n
+      if (is_IOP) this%face_set_name(i)%s = exo_mesh%sset(i)%name
+      call broadcast_alloc_char(this%face_set_name(i)%s)
+    end do
 
   end subroutine init_face_set_data
 

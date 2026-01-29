@@ -73,8 +73,8 @@ class TruchasData:
         self._modified_fields = {}
 
 
-    def em_data(self):
-        return TruchasEMData(os.path.join(self.directory, "fdme-1.vtkhdf"))
+    def em_data(self,blockname):
+        return TruchasEMData(os.path.join(self.directory, "fdme-1.vtkhdf"),blockname)
 
 
     def stdout(self):

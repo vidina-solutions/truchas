@@ -31,6 +31,8 @@ module parallel_communication
   public :: global_any, global_all, global_count
   public :: global_sum, global_minval, global_maxval, global_dot_product, global_norm2
   public :: global_minloc, global_maxloc, global_maxloc_sub
+  public :: broadcast_alloc_char
+  public :: sum_scan
 
   integer, parameter :: root = 0
   integer, parameter, public :: comm = MPI_COMM_WORLD
@@ -611,6 +613,10 @@ module parallel_communication
     end function
   end interface
 
+  interface sum_scan
+    procedure sum_scan1, sum_scan2
+  end interface
+
   logical :: initialized = .false., flag = .false.
 
 contains
@@ -705,5 +711,43 @@ contains
     lindex = global_pair(2)
 
   end subroutine global_maxloc_sub
+
+  subroutine broadcast_alloc_char(scalar)
+    character(:), allocatable, intent(inout) :: scalar
+    integer :: n, ierr
+    if (this_pe == io_pe) then
+      if (allocated(scalar)) then
+        n = len(scalar)
+      else
+        n = -1
+      end if
+    end if
+    call MPI_Bcast(n, 1, MPI_INTEGER4, root, comm, ierr)
+    if (this_pe /= io_pe) then
+      if (n >= 0) then
+        if (allocated(scalar)) then
+          if (len(scalar) /= n) deallocate(scalar)
+        end if
+        if (.not.allocated(scalar)) allocate(character(n) :: scalar)
+      else
+        if (allocated(scalar)) deallocate(scalar)
+      end if
+    end if
+    if (n > 0) call MPI_Bcast(scalar, n, MPI_CHARACTER, root, comm, ierr)
+  end subroutine
+
+  subroutine sum_scan1(x)
+    integer, intent(inout) :: x
+    integer :: y, ierr
+    call MPI_Scan(x, y, 1, MPI_INTEGER, MPI_SUM, comm, ierr)
+    x = y
+  end subroutine
+
+  subroutine sum_scan2(x, y)
+    integer, intent(in)  :: x
+    integer, intent(out) :: y
+    integer :: ierr
+    call MPI_Scan(x, y, 1, MPI_INTEGER, MPI_SUM, comm, ierr)
+  end subroutine
 
 end module parallel_communication

@@ -121,6 +121,7 @@ contains
     mesh%eblk%num_elem = file%elem_blk%num_elem
     mesh%eblk%num_nodes_per_elem = file%elem_blk%num_nodes_per_elem
     do n = 1, mesh%num_eblk
+      mesh%eblk(n)%name = file%elem_blk(n)%name
       mesh%eblk(n)%elem_type = file%elem_blk(n)%elem_type
       allocate(mesh%eblk(n)%connect(mesh%eblk(n)%num_nodes_per_elem,mesh%eblk(n)%num_elem))
       call file%get_connect (mesh%eblk(n)%ID, mesh%eblk(n)%connect, ierr, errstr)
@@ -137,6 +138,7 @@ contains
       mesh%nset%ID = file%node_set%ID
       mesh%nset%num_node = file%node_set%num_node_in_set
       do n = 1, mesh%num_nset
+        mesh%nset(n)%name = file%node_set(n)%name
         allocate(mesh%nset(n)%node(mesh%nset(n)%num_node))
         call file%get_node_set (mesh%nset(n)%ID, mesh%nset(n)%node, ierr, errstr)
         if (ierr /= 0) then
@@ -153,6 +155,7 @@ contains
       mesh%sset%ID = file%side_set%ID
       mesh%sset%num_side = file%side_set%num_side_in_set
       do n = 1, mesh%num_sset
+        mesh%sset(n)%name = file%side_set(n)%name
         allocate(mesh%sset(n)%elem(mesh%sset(n)%num_side))
         allocate(mesh%sset(n)%face(mesh%sset(n)%num_side))
         call file%get_side_set (mesh%sset(n)%ID, mesh%sset(n)%elem, mesh%sset(n)%face, ierr, errstr)
