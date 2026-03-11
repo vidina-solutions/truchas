@@ -1,0 +1,22 @@
+name: Sync to GitLab
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 0"   # every Sunday 03:00 UTC
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to GitLab
+        run: |
+          git remote add gitlab https://${{ secrets.GITLAB_USERNAME }}:${{ secrets.GITLAB_TOKEN }}@${{ secrets.GITLAB_PATH }}
+          git push gitlab --all
+          git push gitlab --tags
